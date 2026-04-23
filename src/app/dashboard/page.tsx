@@ -138,7 +138,10 @@ export default async function DashboardPage() {
   const progress = steps.length > 0 ? Math.round((doneCount / steps.length) * 100) : 0
 
   const shouldShowIntake =
-    role === "client" && clientRow && !intake?.completedAt
+    role === "client" &&
+    clientRow &&
+    clientRow.services.includes("pub") &&
+    !intake?.completedAt
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-8 px-6 py-12 md:py-16">

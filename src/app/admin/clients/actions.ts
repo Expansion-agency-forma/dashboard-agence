@@ -18,6 +18,9 @@ const createClientSchema = z.object({
     .max(120)
     .optional()
     .transform((v) => (v?.trim() ? v.trim() : null)),
+  services: z
+    .array(z.enum(["pub", "formation"]))
+    .min(1, "Choisis au moins une prestation"),
 })
 
 export type CreateClientState =
@@ -39,10 +42,12 @@ export async function createClientAction(
     return { ok: false, errors: {}, message: "Session expirée." }
   }
 
+  const rawServices = formData.getAll("services").map(String)
   const parsed = createClientSchema.safeParse({
     name: formData.get("name"),
     email: formData.get("email"),
     company: formData.get("company"),
+    services: rawServices,
   })
 
   if (!parsed.success) {
@@ -52,7 +57,7 @@ export async function createClientAction(
     }
   }
 
-  const { name, email, company } = parsed.data
+  const { name, email, company, services } = parsed.data
 
   // Insert the client first — source of truth is our DB
   let clientId: string
@@ -63,6 +68,7 @@ export async function createClientAction(
         name,
         email,
         company,
+        services,
         createdBy: userId,
       })
       .returning({ id: clients.id })

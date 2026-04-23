@@ -1,5 +1,14 @@
-import { pgTable, uuid, text, timestamp, pgEnum, index, integer } from "drizzle-orm/pg-core"
-import { relations } from "drizzle-orm"
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  pgEnum,
+  index,
+  integer,
+  boolean,
+} from "drizzle-orm/pg-core"
+import { relations, sql } from "drizzle-orm"
 
 export const clientStatus = pgEnum("client_status", [
   "invited",
@@ -24,6 +33,10 @@ export const clients = pgTable(
     invitationId: text("invitation_id"),
     invitationUrl: text("invitation_url"),
     status: clientStatus("status").notNull().default("invited"),
+    services: text("services")
+      .array()
+      .notNull()
+      .default(sql`ARRAY['pub']::text[]`),
     createdBy: text("created_by").notNull(), // Clerk user id of the agency member who created the client
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -149,6 +162,35 @@ export const intakeRelations = relations(clientIntake, ({ one }) => ({
   }),
 }))
 
+export const adminTasks = pgTable(
+  "admin_tasks",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    done: boolean("done").notNull().default(false),
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    createdBy: text("created_by").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    tasksClientIdx: index("admin_tasks_client_idx").on(table.clientId),
+    tasksDoneIdx: index("admin_tasks_done_idx").on(table.done),
+  }),
+)
+
+export const tasksRelations = relations(adminTasks, ({ one }) => ({
+  client: one(clients, {
+    fields: [adminTasks.clientId],
+    references: [clients.id],
+  }),
+}))
+
 export type Client = typeof clients.$inferSelect
 export type NewClient = typeof clients.$inferInsert
 export type OnboardingStep = typeof onboardingSteps.$inferSelect
@@ -159,3 +201,12 @@ export type ClientAccess = typeof clientAccess.$inferSelect
 export type NewClientAccess = typeof clientAccess.$inferInsert
 export type ClientIntake = typeof clientIntake.$inferSelect
 export type NewClientIntake = typeof clientIntake.$inferInsert
+export type AdminTask = typeof adminTasks.$inferSelect
+export type NewAdminTask = typeof adminTasks.$inferInsert
+
+export type ServiceType = "pub" | "formation"
+export const SERVICE_TYPES: ServiceType[] = ["pub", "formation"]
+export const SERVICE_LABELS: Record<ServiceType, string> = {
+  pub: "Publicité",
+  formation: "Formation en ligne",
+}

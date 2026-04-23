@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table"
 import { Plus, Users } from "lucide-react"
 import { ClientRowActions } from "./client-row-actions"
+import { ServicesBadges } from "@/components/services-badges"
 
 export const dynamic = "force-dynamic"
 
@@ -72,7 +73,7 @@ export default async function ClientsPage() {
               <TableRow>
                 <TableHead>Nom</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Organisme</TableHead>
+                <TableHead>Prestations</TableHead>
                 <TableHead>Statut</TableHead>
                 <TableHead>Créé</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -90,8 +91,8 @@ export default async function ClientsPage() {
                     </Link>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{c.email}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {c.company ?? "—"}
+                  <TableCell>
+                    <ServicesBadges services={c.services} />
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={statusStyles[c.status]}>

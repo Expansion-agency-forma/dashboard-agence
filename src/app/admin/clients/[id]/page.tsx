@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/db/client"
 import {
+  adminTasks,
   clientAccess,
   clientFiles,
   clientIntake,
@@ -26,6 +27,7 @@ import {
   Building2,
   Calendar,
   CheckCircle2,
+  CheckSquare,
   Circle,
   FileText,
   KeyRound,
@@ -34,6 +36,8 @@ import {
   Sparkles,
 } from "lucide-react"
 import { INTAKE_QUESTIONS } from "@/app/intake/questions"
+import { TasksPanel } from "./tasks-panel"
+import { ServicesEditor } from "./services-editor"
 import { StepEditor } from "./step-editor"
 import { ClientControls } from "./client-controls"
 import { Uploader } from "@/components/uploader"
@@ -96,6 +100,15 @@ export default async function ClientDetailPage({
     .from(clientIntake)
     .where(eq(clientIntake.clientId, id))
 
+  const tasks = await db
+    .select()
+    .from(adminTasks)
+    .where(eq(adminTasks.clientId, id))
+    .orderBy(asc(adminTasks.done), desc(adminTasks.createdAt))
+
+  const pendingTasksCount = tasks.filter((t) => !t.done).length
+  const hasPub = client.services.includes("pub")
+
   const decryptedAccess = accessRow
     ? {
         facebookEmail: accessRow.facebookEmail,
@@ -146,6 +159,9 @@ export default async function ClientDetailPage({
               }).format(client.createdAt)}
             </span>
           </div>
+          <div className="mt-3">
+            <ServicesEditor clientId={client.id} initial={client.services} />
+          </div>
         </div>
 
         <ClientControls clientId={client.id} status={client.status} />
@@ -169,28 +185,42 @@ export default async function ClientDetailPage({
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="steps">
+      <Tabs defaultValue={pendingTasksCount > 0 ? "tasks" : "steps"}>
         <TabsList>
+          <TabsTrigger value="tasks">
+            <CheckSquare size={14} />
+            À faire
+            {pendingTasksCount > 0 && (
+              <Badge
+                variant="outline"
+                className="ml-1 h-5 border-[var(--brand-gold-border)] bg-[var(--brand-gold-soft)] px-1.5 text-xs text-[var(--brand-gold)]"
+              >
+                {pendingTasksCount}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="steps">
             <ListChecks size={14} />
             Étapes
           </TabsTrigger>
-          <TabsTrigger value="brief">
-            <Sparkles size={14} />
-            Brief
-            {intake?.completedAt ? (
-              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                ✓
-              </Badge>
-            ) : intake ? (
-              <Badge
-                variant="outline"
-                className="ml-1 h-5 border-amber-500/30 bg-amber-500/10 px-1.5 text-xs text-amber-700 dark:text-amber-300"
-              >
-                Brouillon
-              </Badge>
-            ) : null}
-          </TabsTrigger>
+          {hasPub && (
+            <TabsTrigger value="brief">
+              <Sparkles size={14} />
+              Brief
+              {intake?.completedAt ? (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  ✓
+                </Badge>
+              ) : intake ? (
+                <Badge
+                  variant="outline"
+                  className="ml-1 h-5 border-amber-500/30 bg-amber-500/10 px-1.5 text-xs text-amber-700 dark:text-amber-300"
+                >
+                  Brouillon
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="files">
             <FileText size={14} />
             Fichiers
@@ -205,6 +235,31 @@ export default async function ClientDetailPage({
             Accès
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="tasks">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Tâches internes</CardTitle>
+              <CardDescription>
+                Ce qu&apos;il reste à faire sur ce client. Visibles uniquement
+                par l&apos;agence.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TasksPanel
+                clientId={client.id}
+                tasks={tasks.map((t) => ({
+                  id: t.id,
+                  title: t.title,
+                  description: t.description,
+                  done: t.done,
+                  createdAt: t.createdAt,
+                  completedAt: t.completedAt,
+                }))}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="steps" className="space-y-4">
           {steps.map((step, idx) => {
@@ -251,7 +306,8 @@ export default async function ClientDetailPage({
           })}
         </TabsContent>
 
-        <TabsContent value="brief">
+        {hasPub && (
+          <TabsContent value="brief">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Brief publicitaire</CardTitle>
@@ -292,7 +348,8 @@ export default async function ClientDetailPage({
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+          </TabsContent>
+        )}
 
         <TabsContent value="files">
           <Card>
