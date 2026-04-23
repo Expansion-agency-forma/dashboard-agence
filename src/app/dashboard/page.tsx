@@ -40,7 +40,6 @@ import {
   KeyRound,
   ListChecks,
   Loader2,
-  Megaphone,
   Sparkles,
   UploadCloud,
 } from "lucide-react"
@@ -53,6 +52,7 @@ import { IntakeModal } from "@/components/intake-modal"
 import { decrypt } from "@/lib/crypto"
 import { getRecentNotifications, formatRelativeTime } from "@/lib/notifications"
 import { TaskQuickToggle } from "@/app/admin/tasks/task-quick-toggle"
+import { StepQuickToggle } from "./step-quick-toggle"
 
 export const dynamic = "force-dynamic"
 
@@ -119,18 +119,52 @@ async function AgencyDashboard({ firstName }: { firstName: string | null | undef
   // Only surface pending steps for active clients (skip archived)
   const pendingSteps = pendingStepsRaw.filter((s) => s.clientStatus !== "archived")
 
-  // Group pending steps by client for readability
-  const stepsByClient = pendingSteps.reduce<
-    Record<string, { clientId: string; clientName: string; steps: typeof pendingSteps }>
-  >((acc, s) => {
-    if (!acc[s.clientId]) {
-      acc[s.clientId] = { clientId: s.clientId, clientName: s.clientName, steps: [] }
-    }
-    acc[s.clientId].steps.push(s)
-    return acc
-  }, {})
+  type TodoItem =
+    | {
+        kind: "task"
+        id: string
+        title: string
+        description: string | null
+        clientId: string
+        clientName: string
+        sortKey: number
+      }
+    | {
+        kind: "step"
+        id: string
+        title: string
+        clientId: string
+        clientName: string
+        stepId: string
+        status: "pending" | "in_progress"
+        stepOrder: number
+        sortKey: number
+      }
 
-  const stepGroups = Object.values(stepsByClient)
+  const todoItems: TodoItem[] = [
+    ...pendingTasks.map<TodoItem>((t, i) => ({
+      kind: "task",
+      id: `task-${t.id}`,
+      title: t.title,
+      description: t.description,
+      clientId: t.clientId,
+      clientName: t.clientName,
+      sortKey: i,
+    })),
+    ...pendingSteps.map<TodoItem>((s) => ({
+      kind: "step",
+      id: `step-${s.id}`,
+      title: s.title,
+      clientId: s.clientId,
+      clientName: s.clientName,
+      stepId: s.id,
+      status: s.status as "pending" | "in_progress",
+      stepOrder: s.stepOrder,
+      sortKey: 10_000 + s.stepOrder,
+    })),
+  ].sort((a, b) => a.sortKey - b.sortKey)
+
+  const totalTodos = todoItems.length
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-8 px-6 py-12 md:py-16">
@@ -164,7 +198,7 @@ async function AgencyDashboard({ firstName }: { firstName: string | null | undef
       </section>
 
       <div className="grid gap-6 md:grid-cols-[1fr_minmax(280px,360px)]">
-        {/* === Left column: to-do + pending steps === */}
+        {/* === Left column: unified to-do === */}
         <div className="space-y-6">
           <Card>
             <CardHeader className="flex flex-row items-start justify-between gap-3">
@@ -172,17 +206,17 @@ async function AgencyDashboard({ firstName }: { firstName: string | null | undef
                 <CardTitle className="flex items-center gap-2 text-base">
                   <CheckSquare size={16} className="text-[var(--brand-gold)]" />
                   À faire
-                  {pendingTasks.length > 0 && (
+                  {totalTodos > 0 && (
                     <Badge
                       variant="outline"
                       className="border-[var(--brand-gold-border)] bg-[var(--brand-gold-soft)] text-[var(--brand-gold)]"
                     >
-                      {pendingTasks.length}
+                      {totalTodos}
                     </Badge>
                   )}
                 </CardTitle>
                 <CardDescription>
-                  Tâches ajoutées manuellement sur chaque client.
+                  Tâches manuelles + étapes de production non terminées.
                 </CardDescription>
               </div>
               <Button asChild size="sm" variant="ghost">
@@ -193,98 +227,70 @@ async function AgencyDashboard({ firstName }: { firstName: string | null | undef
               </Button>
             </CardHeader>
             <CardContent>
-              {pendingTasks.length === 0 ? (
+              {totalTodos === 0 ? (
                 <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-                  Aucune tâche en attente. Ouvre une fiche client pour en ajouter.
+                  Tout est en ordre. Rien à faire côté portefeuille client.
                 </p>
               ) : (
                 <ul className="space-y-2">
-                  {pendingTasks.slice(0, 8).map((t) => (
-                    <li
-                      key={t.id}
-                      className="flex items-start gap-3 rounded-md border border-border bg-card p-3"
-                    >
-                      <TaskQuickToggle taskId={t.id} />
-                      <div className="flex-1 space-y-0.5">
-                        <p className="text-sm font-medium">{t.title}</p>
-                        {t.description && (
-                          <p className="line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">
-                            {t.description}
-                          </p>
-                        )}
-                      </div>
-                      <Link
-                        href={`/admin/clients/${t.clientId}`}
-                        className="shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  {todoItems.slice(0, 20).map((item) => {
+                    const isStep = item.kind === "step"
+                    const isInProgress = isStep && item.status === "in_progress"
+                    return (
+                      <li
+                        key={item.id}
+                        className="flex items-start gap-3 rounded-md border border-border bg-card p-3"
                       >
-                        {t.clientName}
-                      </Link>
-                    </li>
-                  ))}
+                        {isStep ? (
+                          <StepQuickToggle
+                            stepId={item.stepId}
+                            clientId={item.clientId}
+                          />
+                        ) : (
+                          <TaskQuickToggle taskId={item.id.replace(/^task-/, "")} />
+                        )}
+                        <div className="flex-1 space-y-0.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-medium">{item.title}</p>
+                            {isStep ? (
+                              <Badge
+                                variant="outline"
+                                className={
+                                  isInProgress
+                                    ? "border-amber-500/30 bg-amber-500/10 text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-300"
+                                    : "border-zinc-500/30 bg-zinc-500/10 text-[10px] uppercase tracking-wider text-muted-foreground"
+                                }
+                              >
+                                {isInProgress ? "En cours" : "Étape"}
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="border-[var(--brand-gold-border)] bg-[var(--brand-gold-soft)] text-[10px] uppercase tracking-wider text-[var(--brand-gold)]"
+                              >
+                                Tâche
+                              </Badge>
+                            )}
+                          </div>
+                          {!isStep && item.description && (
+                            <p className="line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">
+                              {item.description}
+                            </p>
+                          )}
+                        </div>
+                        <Link
+                          href={`/admin/clients/${item.clientId}`}
+                          className="shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          {item.clientName}
+                        </Link>
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </CardContent>
           </Card>
-
-          {stepGroups.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ListChecks size={16} className="text-[var(--brand-gold)]" />
-                  Étapes de production en cours
-                </CardTitle>
-                <CardDescription>
-                  Étapes non cochées « terminée » sur les clients actifs.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {stepGroups.map((group) => (
-                  <div
-                    key={group.clientId}
-                    className="space-y-2 rounded-md border border-border bg-card/50 p-3"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <Link
-                        href={`/admin/clients/${group.clientId}`}
-                        className="text-sm font-medium hover:text-[var(--brand-gold)]"
-                      >
-                        {group.clientName}
-                      </Link>
-                      <Button asChild size="sm" variant="ghost" className="h-7">
-                        <Link href={`/admin/clients/${group.clientId}`}>
-                          Ouvrir
-                          <ArrowRight size={12} />
-                        </Link>
-                      </Button>
-                    </div>
-                    <ul className="flex flex-wrap gap-2">
-                      {group.steps.map((s) => {
-                        const isInProgress = s.status === "in_progress"
-                        return (
-                          <Badge
-                            key={s.id}
-                            variant="outline"
-                            className={
-                              isInProgress
-                                ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                : "border-zinc-500/30 bg-zinc-500/10 text-muted-foreground"
-                            }
-                          >
-                            {isInProgress ? (
-                              <Loader2 size={10} className="animate-spin" />
-                            ) : (
-                              <Circle size={10} />
-                            )}
-                            {s.title}
-                          </Badge>
-                        )
-                      })}
-                    </ul>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         {/* === Right column: notifications + quick actions === */}
