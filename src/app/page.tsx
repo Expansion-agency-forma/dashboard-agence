@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ArrowUpRight, CheckCircle2, Clock } from "lucide-react"
+import { BrandMark } from "@/components/brand-mark"
 
 const ROADMAP: Array<{ slice: string; status: "done" | "next" | "later"; detail: string }> = [
   { slice: "0 — Scaffolding", status: "done", detail: "Next.js · Tailwind · shadcn · Vercel" },
@@ -18,13 +19,14 @@ export default async function Home() {
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-10 px-6 py-16 md:py-24">
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#170000] text-[#c9a84c]">
-            <span className="text-lg font-bold tracking-tight">E</span>
-            <span className="absolute right-2 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#c9a84c]" />
-          </div>
+          <BrandMark />
           <div>
-            <p className="text-sm text-muted-foreground">Expansion Agency</p>
-            <h1 className="text-xl font-semibold tracking-tight">Dashboard interne</h1>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">
+              Expansion Agency
+            </p>
+            <h1 className="text-xl font-semibold tracking-tight">
+              Dashboard <span className="brand-italic text-[var(--brand-gold)]">interne</span>
+            </h1>
           </div>
         </div>
 

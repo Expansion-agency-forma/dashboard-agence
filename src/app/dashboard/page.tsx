@@ -37,6 +37,7 @@ import { getRole } from "@/lib/auth"
 import { getStepDescription, seedDefaultSteps, STEP_STATUS_LABELS } from "@/lib/onboarding"
 import { Uploader } from "@/components/uploader"
 import { AccessForm } from "@/components/access-form"
+import { BrandMark } from "@/components/brand-mark"
 import { decrypt } from "@/lib/crypto"
 
 export const dynamic = "force-dynamic"
@@ -48,10 +49,12 @@ export default async function DashboardPage() {
   const firstName = user?.firstName
   const email = user?.emailAddresses[0]?.emailAddress ?? null
   const greeting = firstName
-    ? `Bonjour ${firstName}`
+    ? firstName
     : email
-      ? `Bonjour ${email}`
-      : "Bonjour"
+      ? email
+      : null
+  // keep unused variable for future compatibility (used by subtitle logic)
+  void greeting
 
   let clientRow: Client | null = null
   let steps: OnboardingStep[] = []
@@ -128,12 +131,11 @@ export default async function DashboardPage() {
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-8 px-6 py-12 md:py-16">
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#170000] text-[#c9a84c]">
-            <span className="text-lg font-bold tracking-tight">E</span>
-            <span className="absolute right-2 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-[#c9a84c]" />
-          </div>
+          <BrandMark />
           <div>
-            <p className="text-sm text-muted-foreground">Expansion Agency</p>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">
+              Expansion Agency
+            </p>
             <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
           </div>
         </div>
@@ -141,7 +143,17 @@ export default async function DashboardPage() {
       </header>
 
       <section className="space-y-2">
-        <h2 className="text-3xl font-semibold tracking-tight">{greeting} 👋</h2>
+        <h2 className="text-4xl font-semibold tracking-tight md:text-5xl">
+          Bonjour
+          {firstName ? (
+            <>
+              {" "}
+              <span className="brand-italic text-[var(--brand-gold)]">
+                {firstName}
+              </span>
+            </>
+          ) : null}
+        </h2>
         {role === "agency" ? (
           <p className="text-muted-foreground">
             Accès admin activé. Gère les clients depuis l&apos;espace dédié.
