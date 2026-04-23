@@ -78,22 +78,69 @@ export async function createClientAction(
   }
 
   // Fire-and-forget Clerk invitation so the client receives a magic link.
-  // Failure doesn't block — admin can resend from the client detail page later.
+  // Failure doesn't block — admin can resend / copy link from the clients list later.
   try {
     const client = await clerkClient()
-    await client.invitations.createInvitation({
+    const origin =
+      process.env.NEXT_PUBLIC_APP_URL ??
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "http://localhost:3000")
+    const invitation = await client.invitations.createInvitation({
       emailAddress: email,
+      redirectUrl: `${origin}/sign-up`,
       publicMetadata: { role: "client", clientId },
       notify: true,
       ignoreExisting: true,
     })
+    await db
+      .update(clients)
+      .set({
+        invitationId: invitation.id,
+        invitationUrl: invitation.url ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(clients.id, clientId))
   } catch (err) {
     console.error("[createClientAction] Clerk invitation failed:", err)
-    // Surface a soft warning via state? For MVP we just log and continue.
+    // The DB row still exists — admin can retry from the clients list.
   }
 
   revalidatePath("/admin/clients")
   redirect("/admin/clients")
+}
+
+export async function resendInvitationAction(clientId: string) {
+  const role = await getRole()
+  if (role !== "agency") throw new Error("Unauthorized")
+
+  const [row] = await db.select().from(clients).where(eq(clients.id, clientId))
+  if (!row) throw new Error("Client introuvable")
+  if (row.status !== "invited") throw new Error("Ce client n'est pas en statut 'invité'")
+
+  const client = await clerkClient()
+  const origin =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : "http://localhost:3000")
+  const invitation = await client.invitations.createInvitation({
+    emailAddress: row.email,
+    redirectUrl: `${origin}/sign-up`,
+    publicMetadata: { role: "client", clientId: row.id },
+    notify: true,
+    ignoreExisting: true,
+  })
+  await db
+    .update(clients)
+    .set({
+      invitationId: invitation.id,
+      invitationUrl: invitation.url ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(clients.id, clientId))
+
+  revalidatePath("/admin/clients")
 }
 
 export async function deleteClientAction(clientId: string) {

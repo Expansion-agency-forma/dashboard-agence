@@ -14,6 +14,8 @@ export const clients = pgTable(
     email: text("email").notNull().unique(),
     company: text("company"),
     clerkUserId: text("clerk_user_id").unique(),
+    invitationId: text("invitation_id"),
+    invitationUrl: text("invitation_url"),
     status: clientStatus("status").notNull().default("invited"),
     createdBy: text("created_by").notNull(), // Clerk user id of the agency member who created the client
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

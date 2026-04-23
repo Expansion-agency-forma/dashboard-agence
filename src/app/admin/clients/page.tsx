@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Plus, Users } from "lucide-react"
+import { ClientRowActions } from "./client-row-actions"
 
 export const dynamic = "force-dynamic"
 
@@ -73,7 +74,8 @@ export default async function ClientsPage() {
                 <TableHead>Email</TableHead>
                 <TableHead>Organisme</TableHead>
                 <TableHead>Statut</TableHead>
-                <TableHead className="text-right">Créé</TableHead>
+                <TableHead>Créé</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -89,12 +91,20 @@ export default async function ClientsPage() {
                       {statusLabels[c.status]}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground">
+                  <TableCell className="text-xs text-muted-foreground">
                     {new Intl.DateTimeFormat("fr-FR", {
                       day: "2-digit",
                       month: "short",
                       year: "numeric",
                     }).format(c.createdAt)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {c.status === "invited" && (
+                      <ClientRowActions
+                        clientId={c.id}
+                        invitationUrl={c.invitationUrl}
+                      />
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
