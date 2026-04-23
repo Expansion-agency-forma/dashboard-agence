@@ -312,9 +312,9 @@ export function IntakeModal({
         onPointerDownOutside={(e) => e.preventDefault()}
         className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-2xl"
       >
-        <div className="flex flex-col">
+        <div className="flex max-h-[92vh] flex-col">
           {step.kind === "intro" ? (
-            <div className="flex flex-col gap-6 px-8 py-10">
+            <div className="flex flex-col gap-6 overflow-y-auto px-8 py-10">
               <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-[var(--brand-gold)]">
                 <Sparkles size={14} />
                 Onboarding
@@ -356,7 +356,7 @@ export function IntakeModal({
             </div>
           ) : (
             <>
-              <div className="border-b border-border bg-card/60 px-8 pb-5 pt-6">
+              <div className="shrink-0 border-b border-border bg-card/60 px-8 pb-5 pt-6">
                 <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-widest text-muted-foreground">
                   <span>
                     Étape {stepIdx} / {totalSteps}
@@ -375,7 +375,7 @@ export function IntakeModal({
                 <Progress value={progress} />
               </div>
 
-              <div className="flex flex-col gap-4 px-8 py-8">
+              <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-8 py-8">
                 {step.kind === "question" && (
                   <>
                     <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -695,7 +695,7 @@ export function IntakeModal({
                 )}
               </div>
 
-              <div className="flex items-center justify-between gap-3 border-t border-border bg-card/60 px-8 py-4">
+              <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-card/60 px-8 py-4">
                 <Button
                   variant="ghost"
                   onClick={onBack}

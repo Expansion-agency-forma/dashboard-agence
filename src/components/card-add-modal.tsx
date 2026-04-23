@@ -45,55 +45,57 @@ export function CardAddModal({ clientId, adAccountName }: Props) {
         onPointerDownOutside={(e) => e.preventDefault()}
         className="max-h-[92vh] gap-0 overflow-hidden p-0 sm:max-w-2xl"
       >
-        <div className="flex flex-col">
-          <div className="flex flex-col gap-5 px-8 py-8">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-[var(--brand-gold)]">
-              <CreditCard size={14} />
-              Action requise
-            </div>
-            <DialogHeader className="space-y-3 text-left">
-              <DialogTitle className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                Ajoutez votre carte{" "}
-                <span className="brand-italic text-[var(--brand-gold)]">
-                  au compte publicitaire
-                </span>
-              </DialogTitle>
-              <DialogDescription className="text-base leading-relaxed text-muted-foreground">
-                Votre compte publicitaire{" "}
-                <span className="font-semibold text-foreground">
-                  {adAccountName}
-                </span>{" "}
-                est prêt. Pour qu&apos;on puisse lancer vos campagnes, il faut
-                ajouter votre moyen de paiement directement sur le compte.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="overflow-hidden rounded-lg border border-border bg-black">
-              <div className="relative aspect-video w-full">
-                <iframe
-                  src={LOOM_EMBED_URL}
-                  className="absolute inset-0 h-full w-full"
-                  frameBorder={0}
-                  allow="fullscreen; clipboard-write"
-                  allowFullScreen
-                  title="Tutoriel — Ajouter votre carte au compte publicitaire"
-                />
+        <div className="flex max-h-[92vh] flex-col">
+          <div className="flex-1 overflow-y-auto">
+            <div className="flex flex-col gap-5 px-8 py-8">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-[var(--brand-gold)]">
+                <CreditCard size={14} />
+                Action requise
               </div>
-            </div>
+              <DialogHeader className="space-y-3 text-left">
+                <DialogTitle className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                  Ajoutez votre carte{" "}
+                  <span className="brand-italic text-[var(--brand-gold)]">
+                    au compte publicitaire
+                  </span>
+                </DialogTitle>
+                <DialogDescription className="text-base leading-relaxed text-muted-foreground">
+                  Votre compte publicitaire{" "}
+                  <span className="font-semibold text-foreground">
+                    {adAccountName}
+                  </span>{" "}
+                  est prêt. Pour qu&apos;on puisse lancer vos campagnes, il faut
+                  ajouter votre moyen de paiement directement sur le compte.
+                </DialogDescription>
+              </DialogHeader>
 
-            <p className="text-sm text-muted-foreground">
-              Suivez la vidéo ci-dessus (2 minutes). Une fois la carte enregistrée
-              sur le compte, cliquez sur le bouton en bas pour nous le faire savoir.
-            </p>
+              <div className="overflow-hidden rounded-lg border border-border bg-black">
+                <div className="relative aspect-video w-full">
+                  <iframe
+                    src={LOOM_EMBED_URL}
+                    className="absolute inset-0 h-full w-full"
+                    frameBorder={0}
+                    allow="fullscreen; clipboard-write"
+                    allowFullScreen
+                    title="Tutoriel — Ajouter votre carte au compte publicitaire"
+                  />
+                </div>
+              </div>
 
-            {error && (
-              <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {error}
+              <p className="text-sm text-muted-foreground">
+                Suivez la vidéo ci-dessus (2 minutes). Une fois la carte enregistrée
+                sur le compte, cliquez sur le bouton en bas pour nous le faire savoir.
               </p>
-            )}
+
+              {error && (
+                <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </p>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-border bg-card/60 px-8 py-4">
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-border bg-card/60 px-8 py-4">
             <Button onClick={confirm} disabled={pending}>
               {pending ? (
                 <>
