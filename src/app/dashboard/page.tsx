@@ -1,7 +1,10 @@
+import Link from "next/link"
 import { currentUser } from "@clerk/nextjs/server"
 import { UserButton } from "@clerk/nextjs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Clock } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Clock, ArrowRight } from "lucide-react"
+import { getRole } from "@/lib/auth"
 
 const NEXT_SLICES = [
   { title: "Slice 2 — Clients", detail: "Liste, création, invitation par magic link" },
@@ -11,6 +14,7 @@ const NEXT_SLICES = [
 
 export default async function DashboardPage() {
   const user = await currentUser()
+  const role = await getRole()
   const firstName = user?.firstName
   const greeting = firstName
     ? `Bonjour ${firstName}`
@@ -37,9 +41,30 @@ export default async function DashboardPage() {
       <section className="space-y-2">
         <h2 className="text-3xl font-semibold tracking-tight">{greeting} 👋</h2>
         <p className="text-muted-foreground">
-          Auth Clerk en place. Prochaine étape : la gestion des clients et leur espace d&apos;onboarding.
+          {role === "agency"
+            ? "Accès admin activé. Gère les clients depuis l'espace dédié."
+            : "Ton espace d'onboarding arrive dans la prochaine slice."}
         </p>
       </section>
+
+      {role === "agency" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Espace admin</CardTitle>
+            <CardDescription>
+              Liste des clients, création, invitation par email.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link href="/admin/clients">
+                Gérer les clients
+                <ArrowRight size={16} />
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
