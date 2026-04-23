@@ -1,16 +1,19 @@
+import Link from "next/link"
+import { auth } from "@clerk/nextjs/server"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ArrowUpRight, CheckCircle2, Clock } from "lucide-react"
 
 const ROADMAP: Array<{ slice: string; status: "done" | "next" | "later"; detail: string }> = [
-  { slice: "0 — Scaffolding", status: "done", detail: "Next.js 15 · Tailwind · shadcn · Vercel" },
-  { slice: "1 — Auth", status: "next", detail: "Clerk magic link · roles agency / client" },
-  { slice: "2 — Clients", status: "later", detail: "Admin CRUD · invitation client" },
+  { slice: "0 — Scaffolding", status: "done", detail: "Next.js · Tailwind · shadcn · Vercel" },
+  { slice: "1 — Auth", status: "done", detail: "Clerk · email magic link · routes protégées" },
+  { slice: "2 — Clients", status: "next", detail: "Admin CRUD · invitation client" },
   { slice: "3 — Onboarding tracker", status: "later", detail: "Script → Tournage → Montage → Lancement" },
   { slice: "4 — Uploads", status: "later", detail: "Broll vers Drive · accès Meta Business" },
 ]
 
-export default function Home() {
+export default async function Home() {
+  const { userId } = await auth()
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-10 px-6 py-16 md:py-24">
       <header className="flex items-start justify-between gap-4">
@@ -24,8 +27,11 @@ export default function Home() {
             <h1 className="text-xl font-semibold tracking-tight">Dashboard interne</h1>
           </div>
         </div>
-        <Button variant="outline" size="sm" disabled>
-          Connexion bientôt
+
+        <Button asChild size="sm">
+          <Link href={userId ? "/dashboard" : "/sign-in"}>
+            {userId ? "Mon espace" : "Se connecter"}
+          </Link>
         </Button>
       </header>
 
