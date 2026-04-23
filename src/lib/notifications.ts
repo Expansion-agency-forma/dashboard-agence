@@ -16,6 +16,7 @@ export type Notification = {
     | "file_upload"
     | "access_updated"
     | "card_confirmed"
+    | "invite_sent"
   title: string
   clientId: string
   clientName: string
@@ -96,6 +97,17 @@ export async function getRecentNotifications(limit = 15): Promise<Notification[]
       .limit(limit),
   ])
 
+  const inviteConfirmations = await db
+    .select({
+      clientId: clients.id,
+      clientName: clients.name,
+      inviteConfirmedAt: clients.adAccountInviteConfirmedAt,
+    })
+    .from(clients)
+    .where(isNotNull(clients.adAccountInviteConfirmedAt))
+    .orderBy(desc(clients.adAccountInviteConfirmedAt))
+    .limit(limit)
+
   const notifications: Notification[] = []
 
   for (const p of pubIntakes) {
@@ -152,6 +164,19 @@ export async function getRecentNotifications(limit = 15): Promise<Notification[]
       clientName: a.clientName,
       createdAt: a.updatedAt,
       href: `/admin/clients/${a.clientId}`,
+    })
+  }
+
+  for (const iv of inviteConfirmations) {
+    if (!iv.inviteConfirmedAt) continue
+    notifications.push({
+      id: `invite-${iv.clientId}-${iv.inviteConfirmedAt.getTime()}`,
+      kind: "invite_sent",
+      title: `${iv.clientName} a invité l'agence sur son compte publicitaire`,
+      clientId: iv.clientId,
+      clientName: iv.clientName,
+      createdAt: iv.inviteConfirmedAt,
+      href: `/admin/clients/${iv.clientId}`,
     })
   }
 

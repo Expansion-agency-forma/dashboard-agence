@@ -43,6 +43,12 @@ export const clients = pgTable(
     adAccountCardConfirmedAt: timestamp("ad_account_card_confirmed_at", {
       withTimezone: true,
     }),
+    // Client's choice during onboarding: "invite" (they invite us on their
+    // existing ad account) or "create" (they want us to create it)
+    adAccountPreference: text("ad_account_preference"),
+    adAccountInviteConfirmedAt: timestamp("ad_account_invite_confirmed_at", {
+      withTimezone: true,
+    }),
     createdBy: text("created_by").notNull(), // Clerk user id of the agency member who created the client
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

@@ -12,14 +12,17 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  CreditCard,
   FileUp,
   Loader2,
   Sparkles,
+  UserPlus,
   X,
 } from "lucide-react"
 import {
@@ -32,49 +35,73 @@ import {
   type IntakeFieldKey,
 } from "@/app/intake/actions"
 import { completeFormationIntakeAction } from "@/app/intake/formation-actions"
+import {
+  confirmInviteSentAction,
+  saveOnboardingCredentialsAction,
+  setAdAccountPreferenceAction,
+} from "@/app/intake/ad-account-actions"
 
 type Step =
   | { kind: "intro" }
   | { kind: "question"; question: IntakeQuestion }
+  | { kind: "choice" }
+  | { kind: "invite" }
+  | { kind: "credentials" }
   | { kind: "livret" }
+
+type Preference = "invite" | "create" | null
 
 type Props = {
   clientId: string
   clientName: string
   needsPub: boolean
   needsFormation: boolean
+  needsBrief: boolean
+  needsAdAccountChoice: boolean
+  initialPreference: Preference
   initial: Partial<Record<IntakeFieldKey, string | null>>
   existingLivret?: { url: string; name: string } | null
 }
+
+const INVITE_LOOM_URL =
+  "https://www.loom.com/embed/2593db9e9e2d4d3caf3dd70048b55dc9"
 
 export function IntakeModal({
   clientId,
   clientName,
   needsPub,
   needsFormation,
+  needsBrief,
+  needsAdAccountChoice,
+  initialPreference,
   initial,
   existingLivret = null,
 }: Props) {
+  const [preference, setPreference] = useState<Preference>(initialPreference)
+
   const steps = useMemo<Step[]>(() => {
     const out: Step[] = [{ kind: "intro" }]
-    if (needsPub) {
+    if (needsPub && needsBrief) {
       for (const q of INTAKE_QUESTIONS) out.push({ kind: "question", question: q })
+    }
+    if (needsPub && needsAdAccountChoice) {
+      out.push({ kind: "choice" })
+      if (preference === "invite") out.push({ kind: "invite" })
+      else if (preference === "create") out.push({ kind: "credentials" })
     }
     if (needsFormation) out.push({ kind: "livret" })
     return out
-  }, [needsPub, needsFormation])
+  }, [needsPub, needsFormation, needsBrief, needsAdAccountChoice, preference])
 
   const firstUnansweredIndex = useMemo(() => {
-    for (let i = 0; i < steps.length; i++) {
+    for (let i = 1; i < steps.length; i++) {
       const s = steps[i]
       if (s.kind === "question" && !initial[s.question.key]) return i
-    }
-    if (needsFormation && !existingLivret) {
-      const livretIdx = steps.findIndex((s) => s.kind === "livret")
-      if (livretIdx !== -1) return livretIdx
+      if (s.kind === "choice" && !preference) return i
+      if (s.kind === "livret" && !existingLivret) return i
     }
     return 0
-  }, [steps, initial, needsFormation, existingLivret])
+  }, [steps, initial, preference, existingLivret])
 
   const [stepIdx, setStepIdx] = useState(firstUnansweredIndex)
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -84,6 +111,14 @@ export function IntakeModal({
     }
     return out
   })
+  const [creds, setCreds] = useState({
+    facebookEmail: "",
+    facebookPassword: "",
+    instagramEmail: "",
+    instagramPassword: "",
+  })
+  const [credsSaved, setCredsSaved] = useState(false)
+  const [inviteConfirmed, setInviteConfirmed] = useState(false)
   const [livretUploaded, setLivretUploaded] = useState<{
     url: string
     name: string
@@ -107,33 +142,34 @@ export function IntakeModal({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const step = steps[stepIdx]
-  const questionSteps = steps.filter((s) => s.kind === "question").length
-  const answeredQuestionCount = steps
-    .slice(1, stepIdx + 1)
-    .filter((s) => s.kind === "question" && values[s.question.key]?.trim())
-    .length
-
-  // Progress: intro = 0%, each question/upload step counts
-  const totalSteps = steps.length - 1 // exclude intro
-  const completedSteps = Math.max(0, stepIdx - (stepIdx > 0 ? 0 : 0))
+  const totalSteps = steps.length - 1
   const progress =
     stepIdx === 0
       ? 0
       : Math.round((Math.min(stepIdx, totalSteps) / totalSteps) * 100)
 
-  const canProceedQuestion =
-    step.kind === "question" && values[step.question.key].trim().length > 0
-  const canProceedLivret = step.kind === "livret" && !!livretUploaded
+  const canProceed = (() => {
+    if (!step) return false
+    if (step.kind === "intro") return true
+    if (step.kind === "question") return values[step.question.key].trim().length > 0
+    if (step.kind === "choice") return Boolean(preference)
+    if (step.kind === "invite") return inviteConfirmed
+    if (step.kind === "credentials") return credsSaved
+    if (step.kind === "livret") return Boolean(livretUploaded)
+    return false
+  })()
+
   const isLast = stepIdx === steps.length - 1
 
   const persistDraft = () => {
+    if (!needsPub || !needsBrief) return
     const payload = {
       clientId,
       ...(values as Partial<Record<IntakeFieldKey, string>>),
     }
     startTransition(async () => {
       try {
-        if (needsPub) await saveIntakeDraftAction(payload)
+        await saveIntakeDraftAction(payload)
       } catch (err) {
         console.error("[intake] saveDraft failed:", err)
       }
@@ -141,8 +177,7 @@ export function IntakeModal({
   }
 
   const onNext = () => {
-    if (step.kind === "question" && !canProceedQuestion) return
-    if (step.kind === "livret" && !canProceedLivret) return
+    if (!canProceed) return
     setError(null)
     if (step.kind === "question") persistDraft()
     setStepIdx((s) => Math.min(s + 1, steps.length - 1))
@@ -151,6 +186,59 @@ export function IntakeModal({
   const onBack = () => {
     setError(null)
     setStepIdx((s) => Math.max(s - 1, 0))
+  }
+
+  const pickPreference = (choice: "invite" | "create") => {
+    setPreference(choice)
+    // Persist the choice immediately so if the user closes & reopens,
+    // the right sub-step shows up.
+    startTransition(async () => {
+      try {
+        await setAdAccountPreferenceAction(clientId, choice)
+      } catch (err) {
+        console.error("[intake] setPreference failed:", err)
+      }
+    })
+    // Advance into the sub-step automatically
+    setStepIdx((s) => s + 1)
+  }
+
+  const confirmInvite = () => {
+    setError(null)
+    startTransition(async () => {
+      try {
+        await confirmInviteSentAction(clientId)
+        setInviteConfirmed(true)
+        setStepIdx((s) => Math.min(s + 1, steps.length - 1))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Erreur — réessayez.")
+      }
+    })
+  }
+
+  const saveCredentials = () => {
+    setError(null)
+    if (
+      !creds.facebookEmail.trim() ||
+      !creds.facebookPassword.trim() ||
+      !creds.instagramEmail.trim() ||
+      !creds.instagramPassword.trim()
+    ) {
+      setError("Remplis tous les champs pour continuer.")
+      return
+    }
+    startTransition(async () => {
+      try {
+        await saveOnboardingCredentialsAction({
+          clientId,
+          ...creds,
+        })
+        setCredsSaved(true)
+        setStepIdx((s) => Math.min(s + 1, steps.length - 1))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Erreur — réessayez.")
+      }
+    })
   }
 
   const handleFileSelect = async (file: File) => {
@@ -183,7 +271,7 @@ export function IntakeModal({
     setError(null)
     startTransition(async () => {
       try {
-        if (needsPub) {
+        if (needsPub && needsBrief) {
           await completeIntakeAction({
             clientId,
             ...(values as Partial<Record<IntakeFieldKey, string>>),
@@ -206,20 +294,14 @@ export function IntakeModal({
     })
   }
 
-  // Intro content varies based on service mix
-  const introTitle =
-    needsPub && needsFormation
-      ? "On prépare votre projet en 2 étapes"
-      : needsPub
-        ? "Brief publicitaire"
-        : "Livret de formation"
+  // Intro header varies depending on what the client has to do
+  const headerBits: string[] = []
+  if (needsPub && needsBrief) headerBits.push("brief publicitaire")
+  if (needsPub && needsAdAccountChoice) headerBits.push("compte publicitaire")
+  if (needsFormation) headerBits.push("livret de formation")
 
-  const introSubtitle =
-    needsPub && needsFormation
-      ? "D'abord votre brief publicitaire (10 questions, ~10 min), puis le dépôt de votre livret de formation."
-      : needsPub
-        ? "10 questions, ~10 minutes, pour qu'on calibre vos campagnes sur votre offre."
-        : "Déposez votre livret de formation pour qu'on puisse lancer la production des modules."
+  const introTitle =
+    headerBits.length > 1 ? "On prépare votre projet en plusieurs étapes" : "Onboarding"
 
   return (
     <Dialog open={true}>
@@ -247,24 +329,21 @@ export function IntakeModal({
                 <DialogDescription className="text-base leading-relaxed text-muted-foreground">
                   <strong className="text-foreground">{introTitle}.</strong>
                   <br />
-                  {introSubtitle}
+                  Quelques questions rapides pour qu&apos;on démarre dans les
+                  meilleures conditions.
                 </DialogDescription>
               </DialogHeader>
 
-              {needsPub && needsFormation && (
+              {headerBits.length > 1 && (
                 <ul className="space-y-2 rounded-lg border border-border bg-card/40 px-4 py-3 text-sm">
-                  <li className="flex items-center gap-2">
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-gold)] text-xs font-semibold text-[#170000]">
-                      1
-                    </span>
-                    <span>Brief publicitaire — {INTAKE_QUESTIONS.length} questions</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-gold)] text-xs font-semibold text-[#170000]">
-                      2
-                    </span>
-                    <span>Dépôt du livret de formation</span>
-                  </li>
+                  {headerBits.map((bit, idx) => (
+                    <li key={bit} className="flex items-center gap-2">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-gold)] text-xs font-semibold text-[#170000]">
+                        {idx + 1}
+                      </span>
+                      <span className="first-letter:uppercase">{bit}</span>
+                    </li>
+                  ))}
                 </ul>
               )}
 
@@ -281,138 +360,340 @@ export function IntakeModal({
                 <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-widest text-muted-foreground">
                   <span>
                     Étape {stepIdx} / {totalSteps}
-                    {step.kind === "livret" ? " — Livret de formation" : ""}
+                    {step.kind === "choice"
+                      ? " — Compte publicitaire"
+                      : step.kind === "invite"
+                        ? " — Inviter l'agence"
+                        : step.kind === "credentials"
+                          ? " — Accès Facebook / Instagram"
+                          : step.kind === "livret"
+                            ? " — Livret de formation"
+                            : ""}
                   </span>
                   <span className="text-[var(--brand-gold)]">{progress}%</span>
                 </div>
                 <Progress value={progress} />
               </div>
 
-              {step.kind === "question" ? (
-                <div className="flex flex-col gap-4 px-8 py-8">
-                  <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                    {step.question.label}
-                  </h2>
-                  {step.question.hint && (
+              <div className="flex flex-col gap-4 px-8 py-8">
+                {step.kind === "question" && (
+                  <>
+                    <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                      {step.question.label}
+                    </h2>
+                    {step.question.hint && (
+                      <p className="text-sm text-muted-foreground">
+                        {step.question.hint}
+                      </p>
+                    )}
+                    {step.question.key === "brandName" ? (
+                      <Input
+                        autoFocus
+                        value={values[step.question.key] ?? ""}
+                        placeholder={step.question.placeholder}
+                        onChange={(e) =>
+                          setValues((v) => ({
+                            ...v,
+                            [step.question.key]: e.target.value,
+                          }))
+                        }
+                        className="text-base"
+                      />
+                    ) : (
+                      <Textarea
+                        autoFocus
+                        value={values[step.question.key] ?? ""}
+                        placeholder={step.question.placeholder}
+                        onChange={(e) =>
+                          setValues((v) => ({
+                            ...v,
+                            [step.question.key]: e.target.value,
+                          }))
+                        }
+                        rows={8}
+                        className="min-h-[160px] text-base leading-relaxed"
+                      />
+                    )}
+                  </>
+                )}
+
+                {step.kind === "choice" && (
+                  <>
+                    <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                      Compte publicitaire — on fait comment ?
+                    </h2>
                     <p className="text-sm text-muted-foreground">
-                      {step.question.hint}
+                      Choisissez l&apos;option qui correspond à votre situation.
                     </p>
-                  )}
-                  {step.question.key === "brandName" ? (
-                    <Input
-                      autoFocus
-                      value={values[step.question.key] ?? ""}
-                      placeholder={step.question.placeholder}
-                      onChange={(e) =>
-                        setValues((v) => ({
-                          ...v,
-                          [step.question.key]: e.target.value,
-                        }))
-                      }
-                      className="text-base"
-                    />
-                  ) : (
-                    <Textarea
-                      autoFocus
-                      value={values[step.question.key] ?? ""}
-                      placeholder={step.question.placeholder}
-                      onChange={(e) =>
-                        setValues((v) => ({
-                          ...v,
-                          [step.question.key]: e.target.value,
-                        }))
-                      }
-                      rows={8}
-                      className="min-h-[160px] text-base leading-relaxed"
-                    />
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-col gap-5 px-8 py-8">
-                  <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                    Déposez votre livret de formation
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Le document qui décrit votre formation (programme, modules,
-                    objectifs). Format PDF, Word, Keynote ou Google Docs exporté.
-                  </p>
-
-                  {livretUploaded ? (
-                    <div className="flex items-center gap-3 rounded-lg border border-[var(--brand-gold-border)] bg-[var(--brand-gold-soft)] p-4">
-                      <CheckCircle2 size={20} className="text-[var(--brand-gold)]" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{livretUploaded.name}</p>
-                        <a
-                          href={livretUploaded.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs text-[var(--brand-gold)] hover:underline"
-                        >
-                          Voir le fichier
-                        </a>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setLivretUploaded(null)
-                          fileInputRef.current?.click()
-                        }}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => pickPreference("invite")}
+                        disabled={pending}
+                        className={`flex h-full flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors ${
+                          preference === "invite"
+                            ? "border-[var(--brand-gold-border)] bg-[var(--brand-gold-soft)]"
+                            : "border-border hover:border-[var(--brand-gold-border)]/60"
+                        }`}
                       >
-                        Remplacer
-                      </Button>
+                        <UserPlus size={18} className="text-[var(--brand-gold)]" />
+                        <span className="text-base font-semibold">
+                          J&apos;ai déjà un compte publicitaire
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          J&apos;invite Expansion en tant qu&apos;administrateur sur
+                          mon compte existant — une vidéo explique comment faire.
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => pickPreference("create")}
+                        disabled={pending}
+                        className={`flex h-full flex-col items-start gap-2 rounded-lg border p-4 text-left transition-colors ${
+                          preference === "create"
+                            ? "border-[var(--brand-gold-border)] bg-[var(--brand-gold-soft)]"
+                            : "border-border hover:border-[var(--brand-gold-border)]/60"
+                        }`}
+                      >
+                        <CreditCard size={18} className="text-[var(--brand-gold)]" />
+                        <span className="text-base font-semibold">
+                          Expansion me crée un compte
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          Je confie mes accès Facebook et Instagram, Expansion monte
+                          le compte publicitaire pour moi.
+                        </span>
+                      </button>
                     </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-8 text-center transition-colors hover:border-[var(--brand-gold-border)] hover:bg-[var(--brand-gold-soft)]"
-                    >
-                      <FileUp size={28} className="text-muted-foreground" />
-                      <span className="text-sm font-medium">
-                        Cliquez pour choisir votre livret
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        PDF · DOCX · PPTX · Keynote · jusqu&apos;à 200 Mo
-                      </span>
-                    </button>
-                  )}
+                  </>
+                )}
 
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.ppt,.pptx,.key,.pages,.odt,.odp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) void handleFileSelect(file)
-                      e.target.value = ""
-                    }}
-                  />
-
-                  {uploadProgress !== null && (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Upload en cours…</span>
-                        <span>{uploadProgress}%</span>
-                      </div>
-                      <Progress value={uploadProgress} />
-                    </div>
-                  )}
-                  {uploadError && (
-                    <p className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      <X size={14} />
-                      {uploadError}
+                {step.kind === "invite" && (
+                  <>
+                    <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                      Invitez-nous sur votre compte publicitaire
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      Regardez la vidéo pour voir comment nous ajouter en Admin,
+                      puis cliquez sur le bouton en bas une fois l&apos;invitation
+                      envoyée.
                     </p>
-                  )}
-                </div>
-              )}
+                    <div className="overflow-hidden rounded-lg border border-border bg-black">
+                      <div className="relative aspect-video w-full">
+                        <iframe
+                          src={INVITE_LOOM_URL}
+                          className="absolute inset-0 h-full w-full"
+                          frameBorder={0}
+                          allow="fullscreen; clipboard-write"
+                          allowFullScreen
+                          title="Tutoriel — Inviter Expansion sur votre compte publicitaire"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Button onClick={confirmInvite} disabled={pending}>
+                        {pending ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <CheckCircle2 size={14} />
+                        )}
+                        J&apos;ai envoyé l&apos;invitation
+                      </Button>
+                      {inviteConfirmed && (
+                        <span className="ml-3 text-sm text-emerald-600 dark:text-emerald-400">
+                          Invitation enregistrée
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
 
-              {error && (
-                <p className="mx-8 mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {error}
-                </p>
-              )}
+                {step.kind === "credentials" && (
+                  <>
+                    <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                      Vos accès Facebook & Instagram
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      On créera votre compte publicitaire nous-mêmes. Vos
+                      identifiants sont chiffrés au repos (AES-256) et
+                      accessibles uniquement par votre gestionnaire.
+                    </p>
+
+                    <div className="space-y-4 rounded-lg border border-border bg-card/40 p-4">
+                      <p className="text-sm font-semibold">Facebook</p>
+                      <div className="space-y-2">
+                        <Label htmlFor="fb-email">Email</Label>
+                        <Input
+                          id="fb-email"
+                          type="email"
+                          value={creds.facebookEmail}
+                          onChange={(e) =>
+                            setCreds((c) => ({
+                              ...c,
+                              facebookEmail: e.target.value,
+                            }))
+                          }
+                          placeholder="votre@email.com"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="fb-pwd">Mot de passe</Label>
+                        <Input
+                          id="fb-pwd"
+                          type="password"
+                          value={creds.facebookPassword}
+                          onChange={(e) =>
+                            setCreds((c) => ({
+                              ...c,
+                              facebookPassword: e.target.value,
+                            }))
+                          }
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 rounded-lg border border-border bg-card/40 p-4">
+                      <p className="text-sm font-semibold">Instagram</p>
+                      <div className="space-y-2">
+                        <Label htmlFor="ig-email">Email / identifiant</Label>
+                        <Input
+                          id="ig-email"
+                          type="text"
+                          value={creds.instagramEmail}
+                          onChange={(e) =>
+                            setCreds((c) => ({
+                              ...c,
+                              instagramEmail: e.target.value,
+                            }))
+                          }
+                          placeholder="votre@email.com ou @handle"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="ig-pwd">Mot de passe</Label>
+                        <Input
+                          id="ig-pwd"
+                          type="password"
+                          value={creds.instagramPassword}
+                          onChange={(e) =>
+                            setCreds((c) => ({
+                              ...c,
+                              instagramPassword: e.target.value,
+                            }))
+                          }
+                          autoComplete="new-password"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Button onClick={saveCredentials} disabled={pending}>
+                        {pending ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <CheckCircle2 size={14} />
+                        )}
+                        Enregistrer mes accès
+                      </Button>
+                      {credsSaved && (
+                        <span className="ml-3 text-sm text-emerald-600 dark:text-emerald-400">
+                          Accès enregistrés
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {step.kind === "livret" && (
+                  <>
+                    <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                      Déposez votre livret de formation
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      Le document qui décrit votre formation (programme,
+                      modules, objectifs). Format PDF, Word, Keynote ou Google
+                      Docs exporté.
+                    </p>
+
+                    {livretUploaded ? (
+                      <div className="flex items-center gap-3 rounded-lg border border-[var(--brand-gold-border)] bg-[var(--brand-gold-soft)] p-4">
+                        <CheckCircle2 size={20} className="text-[var(--brand-gold)]" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{livretUploaded.name}</p>
+                          <a
+                            href={livretUploaded.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs text-[var(--brand-gold)] hover:underline"
+                          >
+                            Voir le fichier
+                          </a>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setLivretUploaded(null)
+                            fileInputRef.current?.click()
+                          }}
+                        >
+                          Remplacer
+                        </Button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border p-8 text-center transition-colors hover:border-[var(--brand-gold-border)] hover:bg-[var(--brand-gold-soft)]"
+                      >
+                        <FileUp size={28} className="text-muted-foreground" />
+                        <span className="text-sm font-medium">
+                          Cliquez pour choisir votre livret
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          PDF · DOCX · PPTX · Keynote · jusqu&apos;à 200 Mo
+                        </span>
+                      </button>
+                    )}
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.ppt,.pptx,.key,.pages,.odt,.odp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) void handleFileSelect(file)
+                        e.target.value = ""
+                      }}
+                    />
+
+                    {uploadProgress !== null && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>Upload en cours…</span>
+                          <span>{uploadProgress}%</span>
+                        </div>
+                        <Progress value={uploadProgress} />
+                      </div>
+                    )}
+                    {uploadError && (
+                      <p className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        <X size={14} />
+                        {uploadError}
+                      </p>
+                    )}
+                  </>
+                )}
+
+                {error && (
+                  <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+              </div>
 
               <div className="flex items-center justify-between gap-3 border-t border-border bg-card/60 px-8 py-4">
                 <Button
@@ -425,14 +706,7 @@ export function IntakeModal({
                 </Button>
 
                 {isLast ? (
-                  <Button
-                    onClick={onSubmit}
-                    disabled={
-                      pending ||
-                      (step.kind === "question" && !canProceedQuestion) ||
-                      (step.kind === "livret" && !canProceedLivret)
-                    }
-                  >
+                  <Button onClick={onSubmit} disabled={pending || !canProceed}>
                     {pending ? (
                       <>
                         <Loader2 size={14} className="animate-spin" />
@@ -446,14 +720,7 @@ export function IntakeModal({
                     )}
                   </Button>
                 ) : (
-                  <Button
-                    onClick={onNext}
-                    disabled={
-                      pending ||
-                      (step.kind === "question" && !canProceedQuestion) ||
-                      (step.kind === "livret" && !canProceedLivret)
-                    }
-                  >
+                  <Button onClick={onNext} disabled={pending || !canProceed}>
                     {pending ? <Loader2 size={14} className="animate-spin" /> : null}
                     Suivant
                     <ArrowRight size={14} />

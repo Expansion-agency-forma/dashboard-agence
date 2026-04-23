@@ -210,6 +210,10 @@ export default async function ClientDetailPage({
       {hasPub && (
         <AdAccountCard
           clientId={client.id}
+          preference={
+            (client.adAccountPreference as "invite" | "create" | null) ?? null
+          }
+          inviteConfirmedAt={client.adAccountInviteConfirmedAt}
           initialCreatedAt={client.adAccountCreatedAt}
           initialName={client.adAccountName}
           cardConfirmedAt={client.adAccountCardConfirmedAt}

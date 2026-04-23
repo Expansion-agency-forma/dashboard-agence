@@ -38,6 +38,7 @@ import {
   CreditCard,
   FileText,
   FileUp,
+  UserPlus,
   KeyRound,
   ListChecks,
   Loader2,
@@ -323,7 +324,9 @@ async function AgencyDashboard({ firstName }: { firstName: string | null | undef
                             ? UploadCloud
                             : n.kind === "card_confirmed"
                               ? CreditCard
-                              : KeyRound
+                              : n.kind === "invite_sent"
+                                ? UserPlus
+                                : KeyRound
                     return (
                       <li key={n.id}>
                         <Link
@@ -471,9 +474,20 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
 
   const hasPub = clientRow?.services.includes("pub") ?? false
   const hasFormation = clientRow?.services.includes("formation") ?? false
-  const pubNeeded = hasPub && !intake?.completedAt
-  const formationNeeded = hasFormation && !formationIntake?.completedAt
-  const shouldShowIntake = clientRow && (pubNeeded || formationNeeded)
+  const needsBrief = hasPub && !intake?.completedAt
+  const needsAdAccountChoice =
+    hasPub &&
+    // Considered done only when the client has confirmed either route
+    !(
+      (clientRow?.adAccountPreference === "invite" &&
+        Boolean(clientRow?.adAccountInviteConfirmedAt)) ||
+      (clientRow?.adAccountPreference === "create" &&
+        Boolean(access?.facebookPasswordEnc) &&
+        Boolean(access?.instagramPasswordEnc))
+    )
+  const needsLivret = hasFormation && !formationIntake?.completedAt
+  const shouldShowIntake =
+    clientRow && (needsBrief || needsAdAccountChoice || needsLivret)
   // Card-add modal: admin has confirmed ad account creation + client hasn't added their card yet.
   // Only after the intake has been taken care of, to avoid stacking blocking modals.
   const shouldShowCardModal =
@@ -499,8 +513,13 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
         <IntakeModal
           clientId={clientRow.id}
           clientName={firstName || clientRow.name || ""}
-          needsPub={pubNeeded}
-          needsFormation={formationNeeded}
+          needsPub={hasPub}
+          needsFormation={needsLivret}
+          needsBrief={needsBrief}
+          needsAdAccountChoice={needsAdAccountChoice}
+          initialPreference={
+            (clientRow.adAccountPreference as "invite" | "create" | null) ?? null
+          }
           initial={{
             brandName: intake?.brandName ?? clientRow.company ?? null,
             targetAudience: intake?.targetAudience ?? null,

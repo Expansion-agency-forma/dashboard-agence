@@ -97,29 +97,48 @@ export async function updateServicesAction(
 
 export async function updateAdAccountAction(
   clientId: string,
-  input: { created: boolean; name?: string | null },
+  input: {
+    hasAccess: boolean
+    name?: string | null
+    cardAlreadyOnAccount?: boolean
+  },
 ) {
   await assertAgency()
   const { clients } = await import("@/db/schema")
 
-  if (input.created) {
+  if (input.hasAccess) {
     const name = (input.name ?? "").trim()
     if (!name) throw new Error("Nom du compte publicitaire requis")
-    // Preserve existing createdAt if already set — the admin may just rename
     const [existing] = await db
-      .select({ adAccountCreatedAt: clients.adAccountCreatedAt })
+      .select({
+        adAccountCreatedAt: clients.adAccountCreatedAt,
+        adAccountCardConfirmedAt: clients.adAccountCardConfirmedAt,
+      })
       .from(clients)
       .where(eq(clients.id, clientId))
+
+    let cardConfirmedAt: Date | null
+    if (input.cardAlreadyOnAccount === true) {
+      // Admin confirms card is already on the account — skip the client popup.
+      cardConfirmedAt = existing?.adAccountCardConfirmedAt ?? new Date()
+    } else if (input.cardAlreadyOnAccount === false) {
+      // Admin says no — client will get the Loom popup to add their card.
+      cardConfirmedAt = null
+    } else {
+      cardConfirmedAt = existing?.adAccountCardConfirmedAt ?? null
+    }
+
     await db
       .update(clients)
       .set({
         adAccountCreatedAt: existing?.adAccountCreatedAt ?? new Date(),
         adAccountName: name,
+        adAccountCardConfirmedAt: cardConfirmedAt,
         updatedAt: new Date(),
       })
       .where(eq(clients.id, clientId))
   } else {
-    // Unchecked: clear all ad-account state (including any client confirmation)
+    // Unchecked: clear all ad-account access state (keep the client's preference)
     await db
       .update(clients)
       .set({
