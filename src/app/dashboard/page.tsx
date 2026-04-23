@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { ArrowRight, CheckCircle2, Circle, Loader2 } from "lucide-react"
 import { getRole } from "@/lib/auth"
-import { getStepDescription, STEP_STATUS_LABELS } from "@/lib/onboarding"
+import { getStepDescription, seedDefaultSteps, STEP_STATUS_LABELS } from "@/lib/onboarding"
 
 export const dynamic = "force-dynamic"
 
@@ -51,6 +51,10 @@ export default async function DashboardPage() {
         clientRow = { ...clientRow, clerkUserId: user.id, status: clientRow.status === "archived" ? "archived" : "active" }
       }
       steps = await getStepsForClient(clientRow.id)
+      if (steps.length === 0) {
+        await seedDefaultSteps(clientRow.id)
+        steps = await getStepsForClient(clientRow.id)
+      }
     }
   }
 

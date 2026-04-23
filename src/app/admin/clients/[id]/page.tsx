@@ -16,7 +16,7 @@ import {
 import { ArrowLeft, CheckCircle2, Circle, Mail, Building2, Calendar } from "lucide-react"
 import { StepEditor } from "./step-editor"
 import { ClientControls } from "./client-controls"
-import { getStepDescription } from "@/lib/onboarding"
+import { getStepDescription, seedDefaultSteps } from "@/lib/onboarding"
 
 export const dynamic = "force-dynamic"
 
@@ -41,11 +41,22 @@ export default async function ClientDetailPage({
   const [client] = await db.select().from(clients).where(eq(clients.id, id))
   if (!client) notFound()
 
-  const steps = await db
+  let steps = await db
     .select()
     .from(onboardingSteps)
     .where(eq(onboardingSteps.clientId, id))
     .orderBy(asc(onboardingSteps.stepOrder))
+
+  // Backfill: clients created before slice 3 didn't get default steps seeded.
+  // Create them on first view — idempotent because we only seed if empty.
+  if (steps.length === 0) {
+    await seedDefaultSteps(id)
+    steps = await db
+      .select()
+      .from(onboardingSteps)
+      .where(eq(onboardingSteps.clientId, id))
+      .orderBy(asc(onboardingSteps.stepOrder))
+  }
 
   const doneCount = steps.filter((s) => s.status === "done").length
   const progress = steps.length > 0 ? Math.round((doneCount / steps.length) * 100) : 0
