@@ -20,7 +20,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
         const role = await getRole()
         const payload = clientPayload
-          ? (JSON.parse(clientPayload) as { clientId?: string })
+          ? (JSON.parse(clientPayload) as { clientId?: string; kind?: string })
           : {}
 
         if (!payload.clientId) throw new Error("clientId manquant")

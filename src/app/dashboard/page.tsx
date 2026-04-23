@@ -3,8 +3,10 @@ import { auth, currentUser } from "@clerk/nextjs/server"
 import { UserButton } from "@clerk/nextjs"
 import { db } from "@/db/client"
 import {
+  adminTasks,
   clientAccess,
   clientFiles,
+  clientFormationIntake,
   clientIntake,
   clients,
   onboardingSteps,
@@ -13,8 +15,9 @@ import {
   type ClientFile,
   type ClientAccess,
   type ClientIntake,
+  type ClientFormationIntake,
 } from "@/db/schema"
-import { asc, desc, eq } from "drizzle-orm"
+import { asc, desc, eq, ne } from "drizzle-orm"
 import {
   Card,
   CardContent,
@@ -28,12 +31,18 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   ArrowRight,
+  Bell,
   CheckCircle2,
+  CheckSquare,
   Circle,
   FileText,
+  FileUp,
   KeyRound,
   ListChecks,
   Loader2,
+  Megaphone,
+  Sparkles,
+  UploadCloud,
 } from "lucide-react"
 import { getRole } from "@/lib/auth"
 import { getStepDescription, seedDefaultSteps, STEP_STATUS_LABELS } from "@/lib/onboarding"
@@ -42,6 +51,8 @@ import { AccessForm } from "@/components/access-form"
 import { BrandMark } from "@/components/brand-mark"
 import { IntakeModal } from "@/components/intake-modal"
 import { decrypt } from "@/lib/crypto"
+import { getRecentNotifications, formatRelativeTime } from "@/lib/notifications"
+import { TaskQuickToggle } from "@/app/admin/tasks/task-quick-toggle"
 
 export const dynamic = "force-dynamic"
 
@@ -51,21 +62,328 @@ export default async function DashboardPage() {
   const role = await getRole()
   const firstName = user?.firstName
   const email = user?.emailAddresses[0]?.emailAddress ?? null
-  const greeting = firstName
-    ? firstName
-    : email
-      ? email
-      : null
-  // keep unused variable for future compatibility (used by subtitle logic)
-  void greeting
 
+  if (role === "agency") {
+    return <AgencyDashboard firstName={firstName} />
+  }
+
+  return (
+    <ClientDashboard
+      firstName={firstName}
+      email={email}
+      userId={userId}
+      user={user}
+    />
+  )
+}
+
+// =============================================================================
+// Agency dashboard — tasks + notifications + quick actions
+// =============================================================================
+async function AgencyDashboard({ firstName }: { firstName: string | null | undefined }) {
+  const [pendingTasks, pendingStepsRaw, notifications, clientsCount] = await Promise.all([
+    db
+      .select({
+        id: adminTasks.id,
+        title: adminTasks.title,
+        description: adminTasks.description,
+        createdAt: adminTasks.createdAt,
+        clientId: clients.id,
+        clientName: clients.name,
+      })
+      .from(adminTasks)
+      .innerJoin(clients, eq(adminTasks.clientId, clients.id))
+      .where(eq(adminTasks.done, false))
+      .orderBy(asc(adminTasks.createdAt)),
+
+    db
+      .select({
+        id: onboardingSteps.id,
+        title: onboardingSteps.title,
+        status: onboardingSteps.status,
+        stepOrder: onboardingSteps.stepOrder,
+        clientId: clients.id,
+        clientName: clients.name,
+        clientStatus: clients.status,
+      })
+      .from(onboardingSteps)
+      .innerJoin(clients, eq(onboardingSteps.clientId, clients.id))
+      .where(ne(onboardingSteps.status, "done"))
+      .orderBy(asc(clients.name), asc(onboardingSteps.stepOrder)),
+
+    getRecentNotifications(15),
+
+    db.select({ count: clients.id }).from(clients),
+  ])
+
+  // Only surface pending steps for active clients (skip archived)
+  const pendingSteps = pendingStepsRaw.filter((s) => s.clientStatus !== "archived")
+
+  // Group pending steps by client for readability
+  const stepsByClient = pendingSteps.reduce<
+    Record<string, { clientId: string; clientName: string; steps: typeof pendingSteps }>
+  >((acc, s) => {
+    if (!acc[s.clientId]) {
+      acc[s.clientId] = { clientId: s.clientId, clientName: s.clientName, steps: [] }
+    }
+    acc[s.clientId].steps.push(s)
+    return acc
+  }, {})
+
+  const stepGroups = Object.values(stepsByClient)
+
+  return (
+    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-8 px-6 py-12 md:py-16">
+      <header className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <BrandMark />
+          <div>
+            <p className="text-xs uppercase tracking-widest text-muted-foreground">
+              Expansion Agency
+            </p>
+            <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
+          </div>
+        </div>
+        <UserButton appearance={{ elements: { avatarBox: "h-9 w-9" } }} />
+      </header>
+
+      <section className="space-y-2">
+        <h2 className="text-4xl font-semibold tracking-tight md:text-5xl">
+          Bonjour
+          {firstName ? (
+            <>
+              {" "}
+              <span className="brand-italic text-[var(--brand-gold)]">{firstName}</span>
+            </>
+          ) : null}
+        </h2>
+        <p className="text-muted-foreground">
+          Ce qu&apos;il se passe sur le portefeuille — {clientsCount.length} client
+          {clientsCount.length > 1 ? "s" : ""} actifs.
+        </p>
+      </section>
+
+      <div className="grid gap-6 md:grid-cols-[1fr_minmax(280px,360px)]">
+        {/* === Left column: to-do + pending steps === */}
+        <div className="space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <CheckSquare size={16} className="text-[var(--brand-gold)]" />
+                  À faire
+                  {pendingTasks.length > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="border-[var(--brand-gold-border)] bg-[var(--brand-gold-soft)] text-[var(--brand-gold)]"
+                    >
+                      {pendingTasks.length}
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  Tâches ajoutées manuellement sur chaque client.
+                </CardDescription>
+              </div>
+              <Button asChild size="sm" variant="ghost">
+                <Link href="/admin/tasks">
+                  Tout voir
+                  <ArrowRight size={14} />
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {pendingTasks.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  Aucune tâche en attente. Ouvre une fiche client pour en ajouter.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {pendingTasks.slice(0, 8).map((t) => (
+                    <li
+                      key={t.id}
+                      className="flex items-start gap-3 rounded-md border border-border bg-card p-3"
+                    >
+                      <TaskQuickToggle taskId={t.id} />
+                      <div className="flex-1 space-y-0.5">
+                        <p className="text-sm font-medium">{t.title}</p>
+                        {t.description && (
+                          <p className="line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">
+                            {t.description}
+                          </p>
+                        )}
+                      </div>
+                      <Link
+                        href={`/admin/clients/${t.clientId}`}
+                        className="shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {t.clientName}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          {stepGroups.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ListChecks size={16} className="text-[var(--brand-gold)]" />
+                  Étapes de production en cours
+                </CardTitle>
+                <CardDescription>
+                  Étapes non cochées « terminée » sur les clients actifs.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {stepGroups.map((group) => (
+                  <div
+                    key={group.clientId}
+                    className="space-y-2 rounded-md border border-border bg-card/50 p-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <Link
+                        href={`/admin/clients/${group.clientId}`}
+                        className="text-sm font-medium hover:text-[var(--brand-gold)]"
+                      >
+                        {group.clientName}
+                      </Link>
+                      <Button asChild size="sm" variant="ghost" className="h-7">
+                        <Link href={`/admin/clients/${group.clientId}`}>
+                          Ouvrir
+                          <ArrowRight size={12} />
+                        </Link>
+                      </Button>
+                    </div>
+                    <ul className="flex flex-wrap gap-2">
+                      {group.steps.map((s) => {
+                        const isInProgress = s.status === "in_progress"
+                        return (
+                          <Badge
+                            key={s.id}
+                            variant="outline"
+                            className={
+                              isInProgress
+                                ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                : "border-zinc-500/30 bg-zinc-500/10 text-muted-foreground"
+                            }
+                          >
+                            {isInProgress ? (
+                              <Loader2 size={10} className="animate-spin" />
+                            ) : (
+                              <Circle size={10} />
+                            )}
+                            {s.title}
+                          </Badge>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* === Right column: notifications + quick actions === */}
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bell size={16} className="text-[var(--brand-gold)]" />
+                Activité récente
+              </CardTitle>
+              <CardDescription>Actions des clients sur leur espace.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {notifications.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  Aucune activité pour l&apos;instant.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {notifications.map((n) => {
+                    const Icon =
+                      n.kind === "pub_intake"
+                        ? Sparkles
+                        : n.kind === "formation_intake"
+                          ? FileUp
+                          : n.kind === "file_upload"
+                            ? UploadCloud
+                            : KeyRound
+                    return (
+                      <li key={n.id}>
+                        <Link
+                          href={n.href}
+                          className="flex gap-3 rounded-md border border-border bg-card/50 p-3 transition-colors hover:border-[var(--brand-gold-border)] hover:bg-card"
+                        >
+                          <Icon
+                            size={16}
+                            className="mt-0.5 shrink-0 text-[var(--brand-gold)]"
+                          />
+                          <div className="flex-1 space-y-0.5">
+                            <p className="text-sm font-medium leading-snug">
+                              {n.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatRelativeTime(n.createdAt)}
+                              {n.meta ? ` · ${n.meta}` : ""}
+                            </p>
+                          </div>
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Actions rapides</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              <Button asChild>
+                <Link href="/admin/clients">
+                  Gérer les clients
+                  <ArrowRight size={16} />
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/admin/clients/new">
+                  Nouveau client
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </main>
+  )
+}
+
+// =============================================================================
+// Client dashboard — onboarding progression + tabs
+// =============================================================================
+type ClientDashboardProps = {
+  firstName: string | null | undefined
+  email: string | null
+  userId: string | null
+  user: Awaited<ReturnType<typeof currentUser>>
+}
+
+async function ClientDashboard({ firstName, email, userId, user }: ClientDashboardProps) {
   let clientRow: Client | null = null
   let steps: OnboardingStep[] = []
   let files: ClientFile[] = []
   let access: ClientAccess | null = null
   let intake: ClientIntake | null = null
+  let formationIntake: ClientFormationIntake | null = null
 
-  if (role === "client" && email) {
+  if (email) {
     const [row] = await db
       .select()
       .from(clients)
@@ -121,6 +439,12 @@ export default async function DashboardPage() {
         .from(clientIntake)
         .where(eq(clientIntake.clientId, clientRow.id))
       intake = intakeRow ?? null
+
+      const [formationIntakeRow] = await db
+        .select()
+        .from(clientFormationIntake)
+        .where(eq(clientFormationIntake.clientId, clientRow.id))
+      formationIntake = formationIntakeRow ?? null
     }
   }
 
@@ -134,14 +458,14 @@ export default async function DashboardPage() {
       }
     : null
 
+  const hasPub = clientRow?.services.includes("pub") ?? false
+  const hasFormation = clientRow?.services.includes("formation") ?? false
+  const pubNeeded = hasPub && !intake?.completedAt
+  const formationNeeded = hasFormation && !formationIntake?.completedAt
+  const shouldShowIntake = clientRow && (pubNeeded || formationNeeded)
+
   const doneCount = steps.filter((s) => s.status === "done").length
   const progress = steps.length > 0 ? Math.round((doneCount / steps.length) * 100) : 0
-
-  const shouldShowIntake =
-    role === "client" &&
-    clientRow &&
-    clientRow.services.includes("pub") &&
-    !intake?.completedAt
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-8 px-6 py-12 md:py-16">
@@ -149,6 +473,8 @@ export default async function DashboardPage() {
         <IntakeModal
           clientId={clientRow.id}
           clientName={firstName || clientRow.name || ""}
+          needsPub={pubNeeded}
+          needsFormation={formationNeeded}
           initial={{
             brandName: intake?.brandName ?? clientRow.company ?? null,
             targetAudience: intake?.targetAudience ?? null,
@@ -161,8 +487,14 @@ export default async function DashboardPage() {
             bestResults: intake?.bestResults ?? null,
             currentOffer: intake?.currentOffer ?? null,
           }}
+          existingLivret={
+            formationIntake?.livretUrl && formationIntake.livretName
+              ? { url: formationIntake.livretUrl, name: formationIntake.livretName }
+              : null
+          }
         />
       )}
+
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <BrandMark />
@@ -182,17 +514,11 @@ export default async function DashboardPage() {
           {firstName ? (
             <>
               {" "}
-              <span className="brand-italic text-[var(--brand-gold)]">
-                {firstName}
-              </span>
+              <span className="brand-italic text-[var(--brand-gold)]">{firstName}</span>
             </>
           ) : null}
         </h2>
-        {role === "agency" ? (
-          <p className="text-muted-foreground">
-            Accès admin activé. Gère les clients depuis l&apos;espace dédié.
-          </p>
-        ) : clientRow ? (
+        {clientRow ? (
           <p className="text-muted-foreground">
             Voici votre espace de production avec Expansion.
           </p>
@@ -203,27 +529,7 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      {role === "agency" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Espace admin</CardTitle>
-            <CardDescription>
-              Liste des clients, création, invitation par email, suivi des étapes,
-              fichiers et accès publicitaires.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild>
-              <Link href="/admin/clients">
-                Gérer les clients
-                <ArrowRight size={16} />
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {role === "client" && clientRow && (
+      {clientRow && (
         <>
           <Card>
             <CardHeader>

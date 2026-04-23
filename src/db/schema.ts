@@ -191,6 +191,30 @@ export const tasksRelations = relations(adminTasks, ({ one }) => ({
   }),
 }))
 
+export const clientFormationIntake = pgTable("client_formation_intake", {
+  clientId: uuid("client_id")
+    .primaryKey()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  livretUrl: text("livret_url"),
+  livretName: text("livret_name"),
+  livretPathname: text("livret_pathname"),
+  livretSize: integer("livret_size"),
+  livretContentType: text("livret_content_type"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const formationIntakeRelations = relations(
+  clientFormationIntake,
+  ({ one }) => ({
+    client: one(clients, {
+      fields: [clientFormationIntake.clientId],
+      references: [clients.id],
+    }),
+  }),
+)
+
 export type Client = typeof clients.$inferSelect
 export type NewClient = typeof clients.$inferInsert
 export type OnboardingStep = typeof onboardingSteps.$inferSelect
@@ -203,6 +227,8 @@ export type ClientIntake = typeof clientIntake.$inferSelect
 export type NewClientIntake = typeof clientIntake.$inferInsert
 export type AdminTask = typeof adminTasks.$inferSelect
 export type NewAdminTask = typeof adminTasks.$inferInsert
+export type ClientFormationIntake = typeof clientFormationIntake.$inferSelect
+export type NewClientFormationIntake = typeof clientFormationIntake.$inferInsert
 
 export type ServiceType = "pub" | "formation"
 export const SERVICE_TYPES: ServiceType[] = ["pub", "formation"]
