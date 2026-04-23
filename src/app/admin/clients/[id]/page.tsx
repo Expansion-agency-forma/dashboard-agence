@@ -1,8 +1,9 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
+import { auth } from "@clerk/nextjs/server"
 import { db } from "@/db/client"
-import { clients, onboardingSteps } from "@/db/schema"
-import { asc, eq } from "drizzle-orm"
+import { clientAccess, clientFiles, clients, onboardingSteps } from "@/db/schema"
+import { asc, desc, eq } from "drizzle-orm"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -13,9 +14,22 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { ArrowLeft, CheckCircle2, Circle, Mail, Building2, Calendar } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  ArrowLeft,
+  Building2,
+  Calendar,
+  CheckCircle2,
+  Circle,
+  FileText,
+  KeyRound,
+  ListChecks,
+  Mail,
+} from "lucide-react"
 import { StepEditor } from "./step-editor"
 import { ClientControls } from "./client-controls"
+import { Uploader } from "@/components/uploader"
+import { AccessForm } from "@/components/access-form"
 import { getStepDescription, seedDefaultSteps } from "@/lib/onboarding"
 
 export const dynamic = "force-dynamic"
@@ -37,6 +51,7 @@ export default async function ClientDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  const { userId } = await auth()
 
   const [client] = await db.select().from(clients).where(eq(clients.id, id))
   if (!client) notFound()
@@ -47,8 +62,6 @@ export default async function ClientDetailPage({
     .where(eq(onboardingSteps.clientId, id))
     .orderBy(asc(onboardingSteps.stepOrder))
 
-  // Backfill: clients created before slice 3 didn't get default steps seeded.
-  // Create them on first view — idempotent because we only seed if empty.
   if (steps.length === 0) {
     await seedDefaultSteps(id)
     steps = await db
@@ -57,6 +70,17 @@ export default async function ClientDetailPage({
       .where(eq(onboardingSteps.clientId, id))
       .orderBy(asc(onboardingSteps.stepOrder))
   }
+
+  const files = await db
+    .select()
+    .from(clientFiles)
+    .where(eq(clientFiles.clientId, id))
+    .orderBy(desc(clientFiles.createdAt))
+
+  const [access] = await db
+    .select()
+    .from(clientAccess)
+    .where(eq(clientAccess.clientId, id))
 
   const doneCount = steps.filter((s) => s.status === "done").length
   const progress = steps.length > 0 ? Math.round((doneCount / steps.length) * 100) : 0
@@ -121,9 +145,28 @@ export default async function ClientDetailPage({
         </CardContent>
       </Card>
 
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold tracking-tight">Étapes de production</h2>
-        <div className="space-y-4">
+      <Tabs defaultValue="steps">
+        <TabsList>
+          <TabsTrigger value="steps">
+            <ListChecks size={14} />
+            Étapes
+          </TabsTrigger>
+          <TabsTrigger value="files">
+            <FileText size={14} />
+            Fichiers
+            {files.length > 0 && (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                {files.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="access">
+            <KeyRound size={14} />
+            Accès
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="steps" className="space-y-4">
           {steps.map((step, idx) => {
             const description = getStepDescription(step.title)
             const done = step.status === "done"
@@ -166,8 +209,49 @@ export default async function ClientDetailPage({
               </Card>
             )
           })}
-        </div>
-      </section>
+        </TabsContent>
+
+        <TabsContent value="files">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Fichiers du client</CardTitle>
+              <CardDescription>
+                Broll, briefs, visuels, exports. Déposés par le client ou par l&apos;agence.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Uploader
+                clientId={client.id}
+                files={files.map((f) => ({
+                  id: f.id,
+                  name: f.name,
+                  url: f.url,
+                  size: f.size,
+                  contentType: f.contentType,
+                  createdAt: f.createdAt,
+                  uploadedBy: f.uploadedBy,
+                }))}
+                currentUserId={userId ?? ""}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="access">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Accès publicitaires</CardTitle>
+              <CardDescription>
+                Business Manager, Pixel, comptes sociaux. Pas de mots de passe —
+                utiliser les invitations natives des plateformes pour les accès sensibles.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AccessForm clientId={client.id} access={access ?? null} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

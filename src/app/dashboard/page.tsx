@@ -1,9 +1,18 @@
 import Link from "next/link"
-import { currentUser } from "@clerk/nextjs/server"
+import { auth, currentUser } from "@clerk/nextjs/server"
 import { UserButton } from "@clerk/nextjs"
 import { db } from "@/db/client"
-import { clients, onboardingSteps, type Client, type OnboardingStep } from "@/db/schema"
-import { asc, eq } from "drizzle-orm"
+import {
+  clientAccess,
+  clientFiles,
+  clients,
+  onboardingSteps,
+  type Client,
+  type OnboardingStep,
+  type ClientFile,
+  type ClientAccess,
+} from "@/db/schema"
+import { asc, desc, eq } from "drizzle-orm"
 import {
   Card,
   CardContent,
@@ -14,13 +23,25 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { ArrowRight, CheckCircle2, Circle, Loader2 } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  ArrowRight,
+  CheckCircle2,
+  Circle,
+  FileText,
+  KeyRound,
+  ListChecks,
+  Loader2,
+} from "lucide-react"
 import { getRole } from "@/lib/auth"
 import { getStepDescription, seedDefaultSteps, STEP_STATUS_LABELS } from "@/lib/onboarding"
+import { Uploader } from "@/components/uploader"
+import { AccessForm } from "@/components/access-form"
 
 export const dynamic = "force-dynamic"
 
 export default async function DashboardPage() {
+  const { userId } = await auth()
   const user = await currentUser()
   const role = await getRole()
   const firstName = user?.firstName
@@ -31,14 +52,19 @@ export default async function DashboardPage() {
       ? `Bonjour ${email}`
       : "Bonjour"
 
-  // Client view — look up their client row and steps
   let clientRow: Client | null = null
   let steps: OnboardingStep[] = []
+  let files: ClientFile[] = []
+  let access: ClientAccess | null = null
+
   if (role === "client" && email) {
-    clientRow = await getClientByEmail(email)
+    const [row] = await db
+      .select()
+      .from(clients)
+      .where(eq(clients.email, email.toLowerCase()))
+    clientRow = row ?? null
 
     if (clientRow) {
-      // First visit after invitation: link the Clerk user + flip to "active"
       if (user && clientRow.clerkUserId !== user.id) {
         await db
           .update(clients)
@@ -48,13 +74,39 @@ export default async function DashboardPage() {
             updatedAt: new Date(),
           })
           .where(eq(clients.id, clientRow.id))
-        clientRow = { ...clientRow, clerkUserId: user.id, status: clientRow.status === "archived" ? "archived" : "active" }
+        clientRow = {
+          ...clientRow,
+          clerkUserId: user.id,
+          status: clientRow.status === "archived" ? "archived" : "active",
+        }
       }
-      steps = await getStepsForClient(clientRow.id)
+
+      steps = await db
+        .select()
+        .from(onboardingSteps)
+        .where(eq(onboardingSteps.clientId, clientRow.id))
+        .orderBy(asc(onboardingSteps.stepOrder))
+
       if (steps.length === 0) {
         await seedDefaultSteps(clientRow.id)
-        steps = await getStepsForClient(clientRow.id)
+        steps = await db
+          .select()
+          .from(onboardingSteps)
+          .where(eq(onboardingSteps.clientId, clientRow.id))
+          .orderBy(asc(onboardingSteps.stepOrder))
       }
+
+      files = await db
+        .select()
+        .from(clientFiles)
+        .where(eq(clientFiles.clientId, clientRow.id))
+        .orderBy(desc(clientFiles.createdAt))
+
+      const [accessRow] = await db
+        .select()
+        .from(clientAccess)
+        .where(eq(clientAccess.clientId, clientRow.id))
+      access = accessRow ?? null
     }
   }
 
@@ -85,7 +137,7 @@ export default async function DashboardPage() {
           </p>
         ) : clientRow ? (
           <p className="text-muted-foreground">
-            Voici l&apos;avancement de votre projet avec Expansion.
+            Voici votre espace de production avec Expansion.
           </p>
         ) : (
           <p className="text-muted-foreground">
@@ -99,7 +151,8 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>Espace admin</CardTitle>
             <CardDescription>
-              Liste des clients, création, invitation par email, suivi des étapes.
+              Liste des clients, création, invitation par email, suivi des étapes,
+              fichiers et accès publicitaires.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -133,11 +186,28 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
 
-          <section className="space-y-3">
-            <h3 className="text-lg font-semibold tracking-tight">
-              Étapes de production
-            </h3>
-            <div className="space-y-3">
+          <Tabs defaultValue="steps">
+            <TabsList>
+              <TabsTrigger value="steps">
+                <ListChecks size={14} />
+                Étapes
+              </TabsTrigger>
+              <TabsTrigger value="files">
+                <FileText size={14} />
+                Mes fichiers
+                {files.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                    {files.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="access">
+                <KeyRound size={14} />
+                Mes accès
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="steps" className="space-y-3">
               {steps.map((step, idx) => {
                 const description = getStepDescription(step.title)
                 const Icon =
@@ -187,26 +257,54 @@ export default async function DashboardPage() {
                   </Card>
                 )
               })}
-            </div>
-          </section>
+            </TabsContent>
+
+            <TabsContent value="files">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Vos fichiers</CardTitle>
+                  <CardDescription>
+                    Déposez ici votre broll, vos briefs, vos visuels. L&apos;agence
+                    y accède immédiatement.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Uploader
+                    clientId={clientRow.id}
+                    files={files.map((f) => ({
+                      id: f.id,
+                      name: f.name,
+                      url: f.url,
+                      size: f.size,
+                      contentType: f.contentType,
+                      createdAt: f.createdAt,
+                      uploadedBy: f.uploadedBy,
+                    }))}
+                    currentUserId={userId ?? ""}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="access">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Vos accès publicitaires</CardTitle>
+                  <CardDescription>
+                    Renseignez ici vos identifiants Business Manager, Pixel et
+                    comptes sociaux. Pas de mots de passe — l&apos;agence vous
+                    demandera une invitation native sur les plateformes qui le
+                    nécessitent.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <AccessForm clientId={clientRow.id} access={access} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </main>
   )
-}
-
-async function getClientByEmail(email: string) {
-  const [row] = await db
-    .select()
-    .from(clients)
-    .where(eq(clients.email, email.toLowerCase()))
-  return row ?? null
-}
-
-async function getStepsForClient(clientId: string) {
-  return db
-    .select()
-    .from(onboardingSteps)
-    .where(eq(onboardingSteps.clientId, clientId))
-    .orderBy(asc(onboardingSteps.stepOrder))
 }
