@@ -95,13 +95,10 @@ export const clientAccess = pgTable("client_access", {
   clientId: uuid("client_id")
     .primaryKey()
     .references(() => clients.id, { onDelete: "cascade" }),
-  metaBusinessId: text("meta_business_id"),
-  metaPageUrl: text("meta_page_url"),
-  metaPixelId: text("meta_pixel_id"),
-  metaAdAccountId: text("meta_ad_account_id"),
-  tiktokHandle: text("tiktok_handle"),
-  youtubeChannelUrl: text("youtube_channel_url"),
-  snapchatHandle: text("snapchat_handle"),
+  facebookEmail: text("facebook_email"),
+  facebookPasswordEnc: text("facebook_password_enc"), // AES-256-GCM encrypted at rest
+  instagramEmail: text("instagram_email"),
+  instagramPasswordEnc: text("instagram_password_enc"),
   notes: text("notes"),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

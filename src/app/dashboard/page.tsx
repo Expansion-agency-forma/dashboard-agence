@@ -37,6 +37,7 @@ import { getRole } from "@/lib/auth"
 import { getStepDescription, seedDefaultSteps, STEP_STATUS_LABELS } from "@/lib/onboarding"
 import { Uploader } from "@/components/uploader"
 import { AccessForm } from "@/components/access-form"
+import { decrypt } from "@/lib/crypto"
 
 export const dynamic = "force-dynamic"
 
@@ -109,6 +110,16 @@ export default async function DashboardPage() {
       access = accessRow ?? null
     }
   }
+
+  const decryptedAccess = access
+    ? {
+        facebookEmail: access.facebookEmail,
+        facebookPassword: decrypt(access.facebookPasswordEnc) || null,
+        instagramEmail: access.instagramEmail,
+        instagramPassword: decrypt(access.instagramPasswordEnc) || null,
+        notes: access.notes,
+      }
+    : null
 
   const doneCount = steps.filter((s) => s.status === "done").length
   const progress = steps.length > 0 ? Math.round((doneCount / steps.length) * 100) : 0
@@ -298,7 +309,7 @@ export default async function DashboardPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <AccessForm clientId={clientRow.id} access={access} />
+                  <AccessForm clientId={clientRow.id} access={decryptedAccess} />
                 </CardContent>
               </Card>
             </TabsContent>

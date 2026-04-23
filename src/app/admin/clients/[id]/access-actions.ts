@@ -7,16 +7,17 @@ import { db } from "@/db/client"
 import { clientAccess, clients } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { getRole } from "@/lib/auth"
+import { encrypt } from "@/lib/crypto"
 
 const accessSchema = z.object({
   clientId: z.string().uuid(),
-  metaBusinessId: z.string().max(200).optional().nullable(),
-  metaPageUrl: z.string().max(500).optional().nullable(),
-  metaPixelId: z.string().max(200).optional().nullable(),
-  metaAdAccountId: z.string().max(200).optional().nullable(),
-  tiktokHandle: z.string().max(200).optional().nullable(),
-  youtubeChannelUrl: z.string().max(500).optional().nullable(),
-  snapchatHandle: z.string().max(200).optional().nullable(),
+  facebookEmail: z.string().max(320).optional().nullable(),
+  facebookPassword: z.string().max(500).optional().nullable(),
+  // sentinel values indicating the user doesn't want to change the stored password
+  facebookPasswordKeep: z.enum(["keep", "change"]).optional(),
+  instagramEmail: z.string().max(320).optional().nullable(),
+  instagramPassword: z.string().max(500).optional().nullable(),
+  instagramPasswordKeep: z.enum(["keep", "change"]).optional(),
   notes: z.string().max(2000).optional().nullable(),
 })
 
@@ -53,13 +54,16 @@ export async function upsertAccessAction(
 ): Promise<UpsertAccessState> {
   const input: Input = {
     clientId: String(formData.get("clientId") ?? ""),
-    metaBusinessId: formData.get("metaBusinessId")?.toString() ?? null,
-    metaPageUrl: formData.get("metaPageUrl")?.toString() ?? null,
-    metaPixelId: formData.get("metaPixelId")?.toString() ?? null,
-    metaAdAccountId: formData.get("metaAdAccountId")?.toString() ?? null,
-    tiktokHandle: formData.get("tiktokHandle")?.toString() ?? null,
-    youtubeChannelUrl: formData.get("youtubeChannelUrl")?.toString() ?? null,
-    snapchatHandle: formData.get("snapchatHandle")?.toString() ?? null,
+    facebookEmail: formData.get("facebookEmail")?.toString() ?? null,
+    facebookPassword: formData.get("facebookPassword")?.toString() ?? null,
+    facebookPasswordKeep:
+      (formData.get("facebookPasswordKeep")?.toString() as "keep" | "change") ??
+      "change",
+    instagramEmail: formData.get("instagramEmail")?.toString() ?? null,
+    instagramPassword: formData.get("instagramPassword")?.toString() ?? null,
+    instagramPasswordKeep:
+      (formData.get("instagramPasswordKeep")?.toString() as "keep" | "change") ??
+      "change",
     notes: formData.get("notes")?.toString() ?? null,
   }
 
@@ -75,15 +79,33 @@ export async function upsertAccessAction(
     return { ok: false, message: err instanceof Error ? err.message : "Unauthorized" }
   }
 
+  const [existing] = await db
+    .select()
+    .from(clientAccess)
+    .where(eq(clientAccess.clientId, parsed.data.clientId))
+
+  const fbPwPlain = cleanString(parsed.data.facebookPassword)
+  const igPwPlain = cleanString(parsed.data.instagramPassword)
+  const keepFb = parsed.data.facebookPasswordKeep === "keep"
+  const keepIg = parsed.data.instagramPasswordKeep === "keep"
+
+  const facebookPasswordEnc = keepFb
+    ? (existing?.facebookPasswordEnc ?? null)
+    : fbPwPlain
+      ? encrypt(fbPwPlain)
+      : null
+  const instagramPasswordEnc = keepIg
+    ? (existing?.instagramPasswordEnc ?? null)
+    : igPwPlain
+      ? encrypt(igPwPlain)
+      : null
+
   const values = {
     clientId: parsed.data.clientId,
-    metaBusinessId: cleanString(parsed.data.metaBusinessId),
-    metaPageUrl: cleanString(parsed.data.metaPageUrl),
-    metaPixelId: cleanString(parsed.data.metaPixelId),
-    metaAdAccountId: cleanString(parsed.data.metaAdAccountId),
-    tiktokHandle: cleanString(parsed.data.tiktokHandle),
-    youtubeChannelUrl: cleanString(parsed.data.youtubeChannelUrl),
-    snapchatHandle: cleanString(parsed.data.snapchatHandle),
+    facebookEmail: cleanString(parsed.data.facebookEmail),
+    facebookPasswordEnc,
+    instagramEmail: cleanString(parsed.data.instagramEmail),
+    instagramPasswordEnc,
     notes: cleanString(parsed.data.notes),
     updatedBy: userId,
     updatedAt: new Date(),
@@ -95,13 +117,10 @@ export async function upsertAccessAction(
     .onConflictDoUpdate({
       target: clientAccess.clientId,
       set: {
-        metaBusinessId: values.metaBusinessId,
-        metaPageUrl: values.metaPageUrl,
-        metaPixelId: values.metaPixelId,
-        metaAdAccountId: values.metaAdAccountId,
-        tiktokHandle: values.tiktokHandle,
-        youtubeChannelUrl: values.youtubeChannelUrl,
-        snapchatHandle: values.snapchatHandle,
+        facebookEmail: values.facebookEmail,
+        facebookPasswordEnc: values.facebookPasswordEnc,
+        instagramEmail: values.instagramEmail,
+        instagramPasswordEnc: values.instagramPasswordEnc,
         notes: values.notes,
         updatedBy: values.updatedBy,
         updatedAt: values.updatedAt,

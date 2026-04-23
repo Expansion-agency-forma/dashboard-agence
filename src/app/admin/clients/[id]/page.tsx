@@ -31,6 +31,7 @@ import { ClientControls } from "./client-controls"
 import { Uploader } from "@/components/uploader"
 import { AccessForm } from "@/components/access-form"
 import { getStepDescription, seedDefaultSteps } from "@/lib/onboarding"
+import { decrypt } from "@/lib/crypto"
 
 export const dynamic = "force-dynamic"
 
@@ -77,10 +78,20 @@ export default async function ClientDetailPage({
     .where(eq(clientFiles.clientId, id))
     .orderBy(desc(clientFiles.createdAt))
 
-  const [access] = await db
+  const [accessRow] = await db
     .select()
     .from(clientAccess)
     .where(eq(clientAccess.clientId, id))
+
+  const decryptedAccess = accessRow
+    ? {
+        facebookEmail: accessRow.facebookEmail,
+        facebookPassword: decrypt(accessRow.facebookPasswordEnc) || null,
+        instagramEmail: accessRow.instagramEmail,
+        instagramPassword: decrypt(accessRow.instagramPasswordEnc) || null,
+        notes: accessRow.notes,
+      }
+    : null
 
   const doneCount = steps.filter((s) => s.status === "done").length
   const progress = steps.length > 0 ? Math.round((doneCount / steps.length) * 100) : 0
@@ -247,7 +258,7 @@ export default async function ClientDetailPage({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <AccessForm clientId={client.id} access={access ?? null} />
+              <AccessForm clientId={client.id} access={decryptedAccess} />
             </CardContent>
           </Card>
         </TabsContent>
