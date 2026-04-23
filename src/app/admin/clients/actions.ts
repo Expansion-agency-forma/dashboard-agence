@@ -8,6 +8,7 @@ import { db } from "@/db/client"
 import { clients } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { getRole } from "@/lib/auth"
+import { seedDefaultSteps } from "@/lib/onboarding"
 
 const createClientSchema = z.object({
   name: z.string().min(1, "Nom requis").max(120),
@@ -66,6 +67,7 @@ export async function createClientAction(
       })
       .returning({ id: clients.id })
     clientId = row.id
+    await seedDefaultSteps(clientId)
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erreur inconnue"
     if (msg.toLowerCase().includes("unique")) {
