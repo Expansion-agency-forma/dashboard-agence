@@ -95,6 +95,77 @@ export async function updateServicesAction(
   revalidatePath("/admin/clients")
 }
 
+export async function updateAdAccountAction(
+  clientId: string,
+  input: { created: boolean; name?: string | null },
+) {
+  await assertAgency()
+  const { clients } = await import("@/db/schema")
+
+  if (input.created) {
+    const name = (input.name ?? "").trim()
+    if (!name) throw new Error("Nom du compte publicitaire requis")
+    // Preserve existing createdAt if already set — the admin may just rename
+    const [existing] = await db
+      .select({ adAccountCreatedAt: clients.adAccountCreatedAt })
+      .from(clients)
+      .where(eq(clients.id, clientId))
+    await db
+      .update(clients)
+      .set({
+        adAccountCreatedAt: existing?.adAccountCreatedAt ?? new Date(),
+        adAccountName: name,
+        updatedAt: new Date(),
+      })
+      .where(eq(clients.id, clientId))
+  } else {
+    // Unchecked: clear all ad-account state (including any client confirmation)
+    await db
+      .update(clients)
+      .set({
+        adAccountCreatedAt: null,
+        adAccountName: null,
+        adAccountCardConfirmedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(clients.id, clientId))
+  }
+
+  revalidatePath(`/admin/clients/${clientId}`)
+  revalidatePath("/admin/clients")
+  revalidatePath("/dashboard")
+}
+
+export async function confirmCardAddedAction(clientId: string) {
+  const { userId } = await auth()
+  if (!userId) throw new Error("Unauthorized")
+  const role = await getRole()
+  const { clients } = await import("@/db/schema")
+
+  if (role === "client") {
+    const { currentUser } = await import("@clerk/nextjs/server")
+    const user = await currentUser()
+    const email = user?.emailAddresses[0]?.emailAddress.toLowerCase()
+    if (!email) throw new Error("Unauthorized")
+    const [row] = await db
+      .select({ email: clients.email })
+      .from(clients)
+      .where(eq(clients.id, clientId))
+    if (!row || row.email !== email) throw new Error("Accès interdit")
+  }
+
+  await db
+    .update(clients)
+    .set({
+      adAccountCardConfirmedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(clients.id, clientId))
+
+  revalidatePath(`/admin/clients/${clientId}`)
+  revalidatePath("/dashboard")
+}
+
 export async function updateShootDateAction(
   clientId: string,
   date: string | null, // YYYY-MM-DD from a date input, or null to clear

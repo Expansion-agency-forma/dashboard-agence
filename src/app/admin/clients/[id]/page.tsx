@@ -42,6 +42,7 @@ import { INTAKE_QUESTIONS } from "@/app/intake/questions"
 import { TasksPanel } from "./tasks-panel"
 import { ServicesEditor } from "./services-editor"
 import { ShootDateCard } from "./shoot-date-card"
+import { AdAccountCard } from "./ad-account-card"
 import { StepEditor } from "./step-editor"
 import { ClientControls } from "./client-controls"
 import { Uploader } from "@/components/uploader"
@@ -205,6 +206,15 @@ export default async function ClientDetailPage({
 
         <ShootDateCard clientId={client.id} initial={client.shootDate} />
       </div>
+
+      {hasPub && (
+        <AdAccountCard
+          clientId={client.id}
+          initialCreatedAt={client.adAccountCreatedAt}
+          initialName={client.adAccountName}
+          cardConfirmedAt={client.adAccountCardConfirmedAt}
+        />
+      )}
 
       <Tabs defaultValue={pendingTasksCount > 0 ? "tasks" : "steps"}>
         <TabsList>

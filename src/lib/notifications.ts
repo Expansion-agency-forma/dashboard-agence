@@ -10,7 +10,12 @@ import { and, desc, eq, isNotNull } from "drizzle-orm"
 
 export type Notification = {
   id: string
-  kind: "pub_intake" | "formation_intake" | "file_upload" | "access_updated"
+  kind:
+    | "pub_intake"
+    | "formation_intake"
+    | "file_upload"
+    | "access_updated"
+    | "card_confirmed"
   title: string
   clientId: string
   clientName: string
@@ -24,7 +29,7 @@ export type Notification = {
  * Derived from existing timestamps (no extra table yet).
  */
 export async function getRecentNotifications(limit = 15): Promise<Notification[]> {
-  const [pubIntakes, formationIntakes, recentFiles, recentAccess] = await Promise.all([
+  const [pubIntakes, formationIntakes, recentFiles, recentAccess, cardConfirmations] = await Promise.all([
     db
       .select({
         clientId: clientIntake.clientId,
@@ -76,6 +81,18 @@ export async function getRecentNotifications(limit = 15): Promise<Notification[]
       .from(clientAccess)
       .innerJoin(clients, eq(clientAccess.clientId, clients.id))
       .orderBy(desc(clientAccess.updatedAt))
+      .limit(limit),
+
+    db
+      .select({
+        clientId: clients.id,
+        clientName: clients.name,
+        confirmedAt: clients.adAccountCardConfirmedAt,
+        adAccountName: clients.adAccountName,
+      })
+      .from(clients)
+      .where(isNotNull(clients.adAccountCardConfirmedAt))
+      .orderBy(desc(clients.adAccountCardConfirmedAt))
       .limit(limit),
   ])
 
@@ -135,6 +152,20 @@ export async function getRecentNotifications(limit = 15): Promise<Notification[]
       clientName: a.clientName,
       createdAt: a.updatedAt,
       href: `/admin/clients/${a.clientId}`,
+    })
+  }
+
+  for (const c of cardConfirmations) {
+    if (!c.confirmedAt) continue
+    notifications.push({
+      id: `card-${c.clientId}-${c.confirmedAt.getTime()}`,
+      kind: "card_confirmed",
+      title: `${c.clientName} a confirmé l'ajout de sa carte`,
+      clientId: c.clientId,
+      clientName: c.clientName,
+      createdAt: c.confirmedAt,
+      href: `/admin/clients/${c.clientId}`,
+      meta: c.adAccountName ?? undefined,
     })
   }
 

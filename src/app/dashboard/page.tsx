@@ -35,6 +35,7 @@ import {
   CheckCircle2,
   CheckSquare,
   Circle,
+  CreditCard,
   FileText,
   FileUp,
   KeyRound,
@@ -50,6 +51,7 @@ import { AccessForm } from "@/components/access-form"
 import { BrandMark } from "@/components/brand-mark"
 import { IntakeModal } from "@/components/intake-modal"
 import { ShootDateReadonly } from "@/components/shoot-date-readonly"
+import { CardAddModal } from "@/components/card-add-modal"
 import { decrypt } from "@/lib/crypto"
 import { getRecentNotifications, formatRelativeTime } from "@/lib/notifications"
 import { TaskQuickToggle } from "@/app/admin/tasks/task-quick-toggle"
@@ -319,7 +321,9 @@ async function AgencyDashboard({ firstName }: { firstName: string | null | undef
                           ? FileUp
                           : n.kind === "file_upload"
                             ? UploadCloud
-                            : KeyRound
+                            : n.kind === "card_confirmed"
+                              ? CreditCard
+                              : KeyRound
                     return (
                       <li key={n.id}>
                         <Link
@@ -470,12 +474,27 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
   const pubNeeded = hasPub && !intake?.completedAt
   const formationNeeded = hasFormation && !formationIntake?.completedAt
   const shouldShowIntake = clientRow && (pubNeeded || formationNeeded)
+  // Card-add modal: admin has confirmed ad account creation + client hasn't added their card yet.
+  // Only after the intake has been taken care of, to avoid stacking blocking modals.
+  const shouldShowCardModal =
+    !shouldShowIntake &&
+    clientRow &&
+    hasPub &&
+    Boolean(clientRow.adAccountCreatedAt) &&
+    Boolean(clientRow.adAccountName) &&
+    !clientRow.adAccountCardConfirmedAt
 
   const doneCount = steps.filter((s) => s.status === "done").length
   const progress = steps.length > 0 ? Math.round((doneCount / steps.length) * 100) : 0
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-8 px-6 py-12 md:py-16">
+      {shouldShowCardModal && clientRow && clientRow.adAccountName && (
+        <CardAddModal
+          clientId={clientRow.id}
+          adAccountName={clientRow.adAccountName}
+        />
+      )}
       {shouldShowIntake && clientRow && (
         <IntakeModal
           clientId={clientRow.id}
