@@ -49,6 +49,7 @@ import { Uploader } from "@/components/uploader"
 import { AccessForm } from "@/components/access-form"
 import { BrandMark } from "@/components/brand-mark"
 import { IntakeModal } from "@/components/intake-modal"
+import { ShootDateReadonly } from "@/components/shoot-date-readonly"
 import { decrypt } from "@/lib/crypto"
 import { getRecentNotifications, formatRelativeTime } from "@/lib/notifications"
 import { TaskQuickToggle } from "@/app/admin/tasks/task-quick-toggle"
@@ -537,23 +538,27 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
 
       {clientRow && (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Progression globale</CardTitle>
-              <CardDescription>
-                {doneCount} étape{doneCount > 1 ? "s" : ""} sur {steps.length}{" "}
-                {steps.length > 1 ? "terminées" : "terminée"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4">
-                <Progress value={progress} className="flex-1" />
-                <span className="min-w-[3ch] text-right text-2xl font-semibold tabular-nums">
-                  {progress}%
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Progression globale</CardTitle>
+                <CardDescription>
+                  {doneCount} étape{doneCount > 1 ? "s" : ""} sur {steps.length}{" "}
+                  {steps.length > 1 ? "terminées" : "terminée"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4">
+                  <Progress value={progress} className="flex-1" />
+                  <span className="min-w-[3ch] text-right text-2xl font-semibold tabular-nums">
+                    {progress}%
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <ShootDateReadonly date={clientRow.shootDate} />
+          </div>
 
           <Tabs defaultValue="steps">
             <TabsList>

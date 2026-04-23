@@ -37,6 +37,7 @@ export const clients = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY['pub']::text[]`),
+    shootDate: timestamp("shoot_date", { withTimezone: true }),
     createdBy: text("created_by").notNull(), // Clerk user id of the agency member who created the client
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

@@ -41,6 +41,7 @@ import {
 import { INTAKE_QUESTIONS } from "@/app/intake/questions"
 import { TasksPanel } from "./tasks-panel"
 import { ServicesEditor } from "./services-editor"
+import { ShootDateCard } from "./shoot-date-card"
 import { StepEditor } from "./step-editor"
 import { ClientControls } from "./client-controls"
 import { Uploader } from "@/components/uploader"
@@ -183,23 +184,27 @@ export default async function ClientDetailPage({
         <ClientControls clientId={client.id} status={client.status} />
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Progression globale</CardTitle>
-          <CardDescription>
-            {doneCount} étape{doneCount > 1 ? "s" : ""} terminée
-            {doneCount > 1 ? "s" : ""} sur {steps.length}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <Progress value={progress} className="flex-1" />
-            <span className="min-w-[3ch] text-right text-2xl font-semibold tabular-nums">
-              {progress}%
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Progression globale</CardTitle>
+            <CardDescription>
+              {doneCount} étape{doneCount > 1 ? "s" : ""} terminée
+              {doneCount > 1 ? "s" : ""} sur {steps.length}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <Progress value={progress} className="flex-1" />
+              <span className="min-w-[3ch] text-right text-2xl font-semibold tabular-nums">
+                {progress}%
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <ShootDateCard clientId={client.id} initial={client.shootDate} />
+      </div>
 
       <Tabs defaultValue={pendingTasksCount > 0 ? "tasks" : "steps"}>
         <TabsList>

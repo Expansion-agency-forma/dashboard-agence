@@ -94,3 +94,28 @@ export async function updateServicesAction(
   revalidatePath(`/admin/clients/${clientId}`)
   revalidatePath("/admin/clients")
 }
+
+export async function updateShootDateAction(
+  clientId: string,
+  date: string | null, // YYYY-MM-DD from a date input, or null to clear
+) {
+  await assertAgency()
+
+  const { clients } = await import("@/db/schema")
+  let parsed: Date | null = null
+  if (date) {
+    // Interpret YYYY-MM-DD as local midnight — we only care about the day
+    const d = new Date(`${date}T00:00:00`)
+    if (Number.isNaN(d.getTime())) throw new Error("Date invalide")
+    parsed = d
+  }
+
+  await db
+    .update(clients)
+    .set({ shootDate: parsed, updatedAt: new Date() })
+    .where(eq(clients.id, clientId))
+
+  revalidatePath(`/admin/clients/${clientId}`)
+  revalidatePath("/admin/clients")
+  revalidatePath("/dashboard")
+}
