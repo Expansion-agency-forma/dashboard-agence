@@ -2,7 +2,13 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/db/client"
-import { clientAccess, clientFiles, clients, onboardingSteps } from "@/db/schema"
+import {
+  clientAccess,
+  clientFiles,
+  clientIntake,
+  clients,
+  onboardingSteps,
+} from "@/db/schema"
 import { asc, desc, eq } from "drizzle-orm"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -25,7 +31,9 @@ import {
   KeyRound,
   ListChecks,
   Mail,
+  Sparkles,
 } from "lucide-react"
+import { INTAKE_QUESTIONS } from "@/app/intake/questions"
 import { StepEditor } from "./step-editor"
 import { ClientControls } from "./client-controls"
 import { Uploader } from "@/components/uploader"
@@ -82,6 +90,11 @@ export default async function ClientDetailPage({
     .select()
     .from(clientAccess)
     .where(eq(clientAccess.clientId, id))
+
+  const [intake] = await db
+    .select()
+    .from(clientIntake)
+    .where(eq(clientIntake.clientId, id))
 
   const decryptedAccess = accessRow
     ? {
@@ -162,6 +175,22 @@ export default async function ClientDetailPage({
             <ListChecks size={14} />
             Étapes
           </TabsTrigger>
+          <TabsTrigger value="brief">
+            <Sparkles size={14} />
+            Brief
+            {intake?.completedAt ? (
+              <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                ✓
+              </Badge>
+            ) : intake ? (
+              <Badge
+                variant="outline"
+                className="ml-1 h-5 border-amber-500/30 bg-amber-500/10 px-1.5 text-xs text-amber-700 dark:text-amber-300"
+              >
+                Brouillon
+              </Badge>
+            ) : null}
+          </TabsTrigger>
           <TabsTrigger value="files">
             <FileText size={14} />
             Fichiers
@@ -220,6 +249,49 @@ export default async function ClientDetailPage({
               </Card>
             )
           })}
+        </TabsContent>
+
+        <TabsContent value="brief">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Brief publicitaire</CardTitle>
+              <CardDescription>
+                {intake?.completedAt
+                  ? `Complété le ${new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(intake.completedAt)}.`
+                  : intake
+                  ? "Le client a commencé à remplir son brief mais ne l'a pas encore validé."
+                  : "Le client n'a pas encore rempli son brief."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {intake ? (
+                INTAKE_QUESTIONS.map((q) => {
+                  const answer = intake[q.key]
+                  return (
+                    <div key={q.key} className="space-y-1">
+                      <p className="text-sm font-medium text-muted-foreground">
+                        {q.number}. {q.label}
+                      </p>
+                      {answer ? (
+                        <p className="whitespace-pre-wrap rounded-md border border-border bg-background/40 px-3 py-2 text-sm">
+                          {answer}
+                        </p>
+                      ) : (
+                        <p className="text-sm italic text-muted-foreground">
+                          Non renseigné
+                        </p>
+                      )}
+                    </div>
+                  )
+                })
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  La modale bloquante s&apos;ouvre automatiquement sur l&apos;espace
+                  client tant que le brief n&apos;est pas validé.
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="files">

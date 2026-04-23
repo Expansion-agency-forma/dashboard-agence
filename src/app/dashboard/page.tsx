@@ -5,12 +5,14 @@ import { db } from "@/db/client"
 import {
   clientAccess,
   clientFiles,
+  clientIntake,
   clients,
   onboardingSteps,
   type Client,
   type OnboardingStep,
   type ClientFile,
   type ClientAccess,
+  type ClientIntake,
 } from "@/db/schema"
 import { asc, desc, eq } from "drizzle-orm"
 import {
@@ -38,6 +40,7 @@ import { getStepDescription, seedDefaultSteps, STEP_STATUS_LABELS } from "@/lib/
 import { Uploader } from "@/components/uploader"
 import { AccessForm } from "@/components/access-form"
 import { BrandMark } from "@/components/brand-mark"
+import { IntakeModal } from "@/components/intake-modal"
 import { decrypt } from "@/lib/crypto"
 
 export const dynamic = "force-dynamic"
@@ -60,6 +63,7 @@ export default async function DashboardPage() {
   let steps: OnboardingStep[] = []
   let files: ClientFile[] = []
   let access: ClientAccess | null = null
+  let intake: ClientIntake | null = null
 
   if (role === "client" && email) {
     const [row] = await db
@@ -111,6 +115,12 @@ export default async function DashboardPage() {
         .from(clientAccess)
         .where(eq(clientAccess.clientId, clientRow.id))
       access = accessRow ?? null
+
+      const [intakeRow] = await db
+        .select()
+        .from(clientIntake)
+        .where(eq(clientIntake.clientId, clientRow.id))
+      intake = intakeRow ?? null
     }
   }
 
@@ -127,8 +137,29 @@ export default async function DashboardPage() {
   const doneCount = steps.filter((s) => s.status === "done").length
   const progress = steps.length > 0 ? Math.round((doneCount / steps.length) * 100) : 0
 
+  const shouldShowIntake =
+    role === "client" && clientRow && !intake?.completedAt
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-8 px-6 py-12 md:py-16">
+      {shouldShowIntake && clientRow && (
+        <IntakeModal
+          clientId={clientRow.id}
+          clientName={firstName || clientRow.name || ""}
+          initial={{
+            brandName: intake?.brandName ?? clientRow.company ?? null,
+            targetAudience: intake?.targetAudience ?? null,
+            topProblems: intake?.topProblems ?? null,
+            offerDifferentiator: intake?.offerDifferentiator ?? null,
+            topBenefits: intake?.topBenefits ?? null,
+            commonObjections: intake?.commonObjections ?? null,
+            objectionResponses: intake?.objectionResponses ?? null,
+            brandStory: intake?.brandStory ?? null,
+            bestResults: intake?.bestResults ?? null,
+            currentOffer: intake?.currentOffer ?? null,
+          }}
+        />
+      )}
       <header className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <BrandMark />

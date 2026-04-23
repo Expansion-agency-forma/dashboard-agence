@@ -123,6 +123,32 @@ export const accessRelations = relations(clientAccess, ({ one }) => ({
   }),
 }))
 
+export const clientIntake = pgTable("client_intake", {
+  clientId: uuid("client_id")
+    .primaryKey()
+    .references(() => clients.id, { onDelete: "cascade" }),
+  brandName: text("brand_name"),
+  targetAudience: text("target_audience"),
+  topProblems: text("top_problems"),
+  offerDifferentiator: text("offer_differentiator"),
+  topBenefits: text("top_benefits"),
+  commonObjections: text("common_objections"),
+  objectionResponses: text("objection_responses"),
+  brandStory: text("brand_story"),
+  bestResults: text("best_results"),
+  currentOffer: text("current_offer"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const intakeRelations = relations(clientIntake, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientIntake.clientId],
+    references: [clients.id],
+  }),
+}))
+
 export type Client = typeof clients.$inferSelect
 export type NewClient = typeof clients.$inferInsert
 export type OnboardingStep = typeof onboardingSteps.$inferSelect
@@ -131,3 +157,5 @@ export type ClientFile = typeof clientFiles.$inferSelect
 export type NewClientFile = typeof clientFiles.$inferInsert
 export type ClientAccess = typeof clientAccess.$inferSelect
 export type NewClientAccess = typeof clientAccess.$inferInsert
+export type ClientIntake = typeof clientIntake.$inferSelect
+export type NewClientIntake = typeof clientIntake.$inferInsert
