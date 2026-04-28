@@ -132,6 +132,75 @@
   }
 }
 
+@media print {
+  /* Minimal page margins — actual breathing room is in main's padding below. */
+  @page {
+    margin: 0.5cm;
+  }
+  /* Hide Next.js dev overlays when printing. */
+  body > nextjs-portal,
+  iframe[name^="next-route-announcer"] {
+    display: none !important;
+  }
+  /* Compact the main quote layout so it fits one page when possible. */
+  main {
+    padding: 1.2cm 0.5cm !important;
+    min-height: 0 !important;
+    gap: 0.75rem !important;
+    max-width: 100% !important;
+    font-size: 0.82rem;
+    line-height: 1.4 !important;
+  }
+  main > section,
+  main > header,
+  main > footer {
+    margin: 0 !important;
+  }
+  /* Tame inner vertical spacing (Tailwind space-y-*). */
+  main .space-y-2 > * + *,
+  main .space-y-3 > * + *,
+  main .space-y-4 > * + * {
+    margin-top: 0.4rem !important;
+  }
+  main .space-y-5 > * + *,
+  main .space-y-6 > * + * {
+    margin-top: 0.6rem !important;
+  }
+  /* Tighten card padding + spacing in print. */
+  .rounded-2xl {
+    padding: 0.75rem 1rem !important;
+  }
+  .rounded-lg {
+    padding: 0.5rem 0.75rem !important;
+  }
+  /* Reduce headings + hero spacing. */
+  h1 {
+    font-size: 1.5rem !important;
+    line-height: 1.15 !important;
+  }
+  h2 {
+    font-size: 0.7rem !important;
+  }
+  h3 {
+    font-size: 0.95rem !important;
+  }
+  /* Inner small blocks stay together; outer big ones may break if needed. */
+  .rounded-lg {
+    break-inside: avoid;
+  }
+  /* Avoid orphan headings at the bottom of a page. */
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+  /* Ensure backgrounds and colors are preserved. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
 @layer utilities {
   .brand-italic {
     font-family: var(--font-serif);

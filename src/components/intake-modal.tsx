@@ -40,6 +40,7 @@ import {
   saveOnboardingCredentialsAction,
   setAdAccountPreferenceAction,
 } from "@/app/intake/ad-account-actions"
+import { saveBillingIntakeAction } from "@/app/intake/billing-actions"
 
 type Step =
   | { kind: "intro" }
@@ -48,8 +49,19 @@ type Step =
   | { kind: "invite" }
   | { kind: "credentials" }
   | { kind: "livret" }
+  | { kind: "billing" }
 
 type Preference = "invite" | "create" | null
+
+type BillingInitial = {
+  billingName: string | null
+  billingAddressLine1: string | null
+  billingAddressLine2: string | null
+  billingPostalCode: string | null
+  billingCity: string | null
+  billingCountry: string | null
+  siret: string | null
+}
 
 type Props = {
   clientId: string
@@ -58,8 +70,10 @@ type Props = {
   needsFormation: boolean
   needsBrief: boolean
   needsAdAccountChoice: boolean
+  needsBilling: boolean
   initialPreference: Preference
   initial: Partial<Record<IntakeFieldKey, string | null>>
+  initialBilling: BillingInitial
   existingLivret?: { url: string; name: string } | null
 }
 
@@ -73,8 +87,10 @@ export function IntakeModal({
   needsFormation,
   needsBrief,
   needsAdAccountChoice,
+  needsBilling,
   initialPreference,
   initial,
+  initialBilling,
   existingLivret = null,
 }: Props) {
   const [preference, setPreference] = useState<Preference>(initialPreference)
@@ -90,8 +106,18 @@ export function IntakeModal({
       else if (preference === "create") out.push({ kind: "credentials" })
     }
     if (needsFormation) out.push({ kind: "livret" })
+    if (needsBilling) out.push({ kind: "billing" })
     return out
-  }, [needsPub, needsFormation, needsBrief, needsAdAccountChoice, preference])
+  }, [needsPub, needsFormation, needsBrief, needsAdAccountChoice, needsBilling, preference])
+
+  const isBillingComplete = (b: BillingInitial) =>
+    Boolean(
+      b.billingName &&
+        b.billingAddressLine1 &&
+        b.billingPostalCode &&
+        b.billingCity &&
+        b.siret,
+    )
 
   const firstUnansweredIndex = useMemo(() => {
     for (let i = 1; i < steps.length; i++) {
@@ -99,9 +125,10 @@ export function IntakeModal({
       if (s.kind === "question" && !initial[s.question.key]) return i
       if (s.kind === "choice" && !preference) return i
       if (s.kind === "livret" && !existingLivret) return i
+      if (s.kind === "billing" && !isBillingComplete(initialBilling)) return i
     }
     return 0
-  }, [steps, initial, preference, existingLivret])
+  }, [steps, initial, preference, existingLivret, initialBilling])
 
   const [stepIdx, setStepIdx] = useState(firstUnansweredIndex)
   const [values, setValues] = useState<Record<string, string>>(() => {
@@ -119,6 +146,17 @@ export function IntakeModal({
   })
   const [credsSaved, setCredsSaved] = useState(false)
   const [inviteConfirmed, setInviteConfirmed] = useState(false)
+  const [billing, setBilling] = useState({
+    billingName: initialBilling.billingName ?? "",
+    billingAddressLine1: initialBilling.billingAddressLine1 ?? "",
+    billingAddressLine2: initialBilling.billingAddressLine2 ?? "",
+    billingPostalCode: initialBilling.billingPostalCode ?? "",
+    billingCity: initialBilling.billingCity ?? "",
+    siret: initialBilling.siret ?? "",
+  })
+  const [billingSaved, setBillingSaved] = useState(
+    isBillingComplete(initialBilling),
+  )
   const [livretUploaded, setLivretUploaded] = useState<{
     url: string
     name: string
@@ -156,6 +194,7 @@ export function IntakeModal({
     if (step.kind === "invite") return inviteConfirmed
     if (step.kind === "credentials") return credsSaved
     if (step.kind === "livret") return Boolean(livretUploaded)
+    if (step.kind === "billing") return billingSaved
     return false
   })()
 
@@ -241,6 +280,40 @@ export function IntakeModal({
     })
   }
 
+  const saveBilling = () => {
+    setError(null)
+    if (
+      !billing.billingName.trim() ||
+      !billing.billingAddressLine1.trim() ||
+      !billing.billingPostalCode.trim() ||
+      !billing.billingCity.trim() ||
+      !billing.siret.trim()
+    ) {
+      setError("Remplis tous les champs obligatoires.")
+      return
+    }
+    if (!/^\d{14}$/.test(billing.siret.trim())) {
+      setError("Le SIRET doit comporter exactement 14 chiffres.")
+      return
+    }
+    startTransition(async () => {
+      try {
+        await saveBillingIntakeAction({
+          clientId,
+          billingName: billing.billingName.trim(),
+          billingAddressLine1: billing.billingAddressLine1.trim(),
+          billingAddressLine2: billing.billingAddressLine2.trim() || null,
+          billingPostalCode: billing.billingPostalCode.trim(),
+          billingCity: billing.billingCity.trim(),
+          siret: billing.siret.trim(),
+        })
+        setBillingSaved(true)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Erreur — réessayez.")
+      }
+    })
+  }
+
   const handleFileSelect = async (file: File) => {
     setUploadError(null)
     setUploadProgress(0)
@@ -299,6 +372,7 @@ export function IntakeModal({
   if (needsPub && needsBrief) headerBits.push("brief publicitaire")
   if (needsPub && needsAdAccountChoice) headerBits.push("compte publicitaire")
   if (needsFormation) headerBits.push("livret de formation")
+  if (needsBilling) headerBits.push("coordonnées de facturation")
 
   const introTitle =
     headerBits.length > 1 ? "On prépare votre projet en plusieurs étapes" : "Onboarding"
@@ -368,7 +442,9 @@ export function IntakeModal({
                           ? " — Accès Facebook / Instagram"
                           : step.kind === "livret"
                             ? " — Livret de formation"
-                            : ""}
+                            : step.kind === "billing"
+                              ? " — Coordonnées de facturation"
+                              : ""}
                   </span>
                   <span className="text-[var(--brand-gold)]">{progress}%</span>
                 </div>
@@ -685,6 +761,139 @@ export function IntakeModal({
                         {uploadError}
                       </p>
                     )}
+                  </>
+                )}
+
+                {step.kind === "billing" && (
+                  <>
+                    <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                      Vos coordonnées de facturation
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      Ces informations apparaîtront sur vos factures mensuelles.
+                      Remplissez avec le nom légal et l&apos;adresse de votre
+                      structure.
+                    </p>
+
+                    <div className="space-y-4 rounded-lg border border-border bg-card/40 p-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="bi-name">Nom de l&apos;institut / société</Label>
+                        <Input
+                          id="bi-name"
+                          value={billing.billingName}
+                          onChange={(e) => {
+                            setBilling((b) => ({ ...b, billingName: e.target.value }))
+                            setBillingSaved(false)
+                          }}
+                          placeholder="Ex. Institut Beauté SARL"
+                          autoComplete="organization"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="bi-line1">Adresse</Label>
+                        <Input
+                          id="bi-line1"
+                          value={billing.billingAddressLine1}
+                          onChange={(e) => {
+                            setBilling((b) => ({
+                              ...b,
+                              billingAddressLine1: e.target.value,
+                            }))
+                            setBillingSaved(false)
+                          }}
+                          placeholder="12 rue des Lilas"
+                          autoComplete="address-line1"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="bi-line2">
+                          Complément{" "}
+                          <span className="text-muted-foreground">(facultatif)</span>
+                        </Label>
+                        <Input
+                          id="bi-line2"
+                          value={billing.billingAddressLine2}
+                          onChange={(e) => {
+                            setBilling((b) => ({
+                              ...b,
+                              billingAddressLine2: e.target.value,
+                            }))
+                            setBillingSaved(false)
+                          }}
+                          placeholder="Bât. A, étage 2"
+                          autoComplete="address-line2"
+                        />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="bi-postal">Code postal</Label>
+                          <Input
+                            id="bi-postal"
+                            value={billing.billingPostalCode}
+                            onChange={(e) => {
+                              setBilling((b) => ({
+                                ...b,
+                                billingPostalCode: e.target.value,
+                              }))
+                              setBillingSaved(false)
+                            }}
+                            placeholder="75001"
+                            inputMode="numeric"
+                            autoComplete="postal-code"
+                          />
+                        </div>
+                        <div className="space-y-2 sm:col-span-2">
+                          <Label htmlFor="bi-city">Ville</Label>
+                          <Input
+                            id="bi-city"
+                            value={billing.billingCity}
+                            onChange={(e) => {
+                              setBilling((b) => ({
+                                ...b,
+                                billingCity: e.target.value,
+                              }))
+                              setBillingSaved(false)
+                            }}
+                            placeholder="Paris"
+                            autoComplete="address-level2"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="bi-siret">SIRET</Label>
+                        <Input
+                          id="bi-siret"
+                          value={billing.siret}
+                          onChange={(e) => {
+                            setBilling((b) => ({
+                              ...b,
+                              siret: e.target.value.replace(/\s/g, ""),
+                            }))
+                            setBillingSaved(false)
+                          }}
+                          placeholder="14 chiffres"
+                          inputMode="numeric"
+                          maxLength={14}
+                          className="font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Button onClick={saveBilling} disabled={pending}>
+                        {pending ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <CheckCircle2 size={14} />
+                        )}
+                        Enregistrer mes coordonnées
+                      </Button>
+                      {billingSaved && (
+                        <span className="ml-3 text-sm text-emerald-600 dark:text-emerald-400">
+                          Coordonnées enregistrées
+                        </span>
+                      )}
+                    </div>
                   </>
                 )}
 

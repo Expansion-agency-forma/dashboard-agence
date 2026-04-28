@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { UserButton } from "@clerk/nextjs"
 import { requireAgency } from "@/lib/auth"
-import { Users, LayoutDashboard, CheckSquare } from "lucide-react"
+import { Users, LayoutDashboard, CheckSquare, FileText } from "lucide-react"
 import { BrandMark } from "@/components/brand-mark"
 import { db } from "@/db/client"
 import { adminTasks } from "@/db/schema"
@@ -41,6 +41,13 @@ export default async function AdminLayout({
           >
             <Users size={16} />
             Clients
+          </Link>
+          <Link
+            href="/admin/quotes"
+            className="flex items-center gap-2 rounded-md px-3 py-2 font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <FileText size={16} />
+            Devis
           </Link>
           <Link
             href="/admin/tasks"

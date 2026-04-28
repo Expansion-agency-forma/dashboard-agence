@@ -9,6 +9,8 @@ import {
   clientFormationIntake,
   clientIntake,
   clients,
+  invoices,
+  monthlyPubRevenue,
   onboardingSteps,
 } from "@/db/schema"
 import { asc, desc, eq } from "drizzle-orm"
@@ -30,6 +32,7 @@ import {
   CheckCircle2,
   CheckSquare,
   Circle,
+  Euro,
   FileText,
   FileUp,
   GraduationCap,
@@ -43,8 +46,12 @@ import { TasksPanel } from "./tasks-panel"
 import { ServicesEditor } from "./services-editor"
 import { ShootDateCard } from "./shoot-date-card"
 import { AdAccountCard } from "./ad-account-card"
+import { BillingCard } from "./billing-card"
+import { FormationPricingCard } from "./formation-pricing-card"
+import { RevenuePanel } from "./revenue-panel"
 import { StepEditor } from "./step-editor"
 import { ClientControls } from "./client-controls"
+import { InvoicesList } from "@/components/invoices-list"
 import { Uploader } from "@/components/uploader"
 import { AccessForm } from "@/components/access-form"
 import { getStepDescription, seedDefaultSteps } from "@/lib/onboarding"
@@ -126,6 +133,26 @@ export default async function ClientDetailPage({
     .select()
     .from(clientFormationIntake)
     .where(eq(clientFormationIntake.clientId, id))
+
+  const revenueDeclarations = hasPub
+    ? await db
+        .select()
+        .from(monthlyPubRevenue)
+        .where(eq(monthlyPubRevenue.clientId, id))
+        .orderBy(desc(monthlyPubRevenue.periodMonth))
+    : []
+  const pendingRevenueCount = revenueDeclarations.filter(
+    (r) => r.status === "declared",
+  ).length
+
+  const clientInvoices = await db
+    .select()
+    .from(invoices)
+    .where(eq(invoices.clientId, id))
+    .orderBy(desc(invoices.issuedAt))
+  const hasFormationInvoice = clientInvoices.some(
+    (i) => i.serviceType === "formation",
+  )
 
   const decryptedAccess = accessRow
     ? {
@@ -220,7 +247,38 @@ export default async function ClientDetailPage({
         />
       )}
 
-      <Tabs defaultValue={pendingTasksCount > 0 ? "tasks" : "steps"}>
+      <BillingCard
+        clientId={client.id}
+        initial={{
+          billingName: client.billingName,
+          billingAddressLine1: client.billingAddressLine1,
+          billingAddressLine2: client.billingAddressLine2,
+          billingPostalCode: client.billingPostalCode,
+          billingCity: client.billingCity,
+          billingCountry: client.billingCountry,
+          siret: client.siret,
+        }}
+        stripeCustomerId={client.stripeCustomerId}
+      />
+
+      {hasFormation && (
+        <FormationPricingCard
+          clientId={client.id}
+          initialDays={client.formationDays}
+          initialTravelCents={client.formationTravelCents}
+          hasFormationInvoice={hasFormationInvoice}
+        />
+      )}
+
+      <Tabs
+        defaultValue={
+          pendingRevenueCount > 0
+            ? "revenue"
+            : pendingTasksCount > 0
+              ? "tasks"
+              : "steps"
+        }
+      >
         <TabsList>
           <TabsTrigger value="tasks">
             <CheckSquare size={14} />
@@ -279,6 +337,18 @@ export default async function ClientDetailPage({
           <TabsTrigger value="access">
             <KeyRound size={14} />
             Accès
+          </TabsTrigger>
+          <TabsTrigger value="revenue">
+            <Euro size={14} />
+            Facturation
+            {pendingRevenueCount > 0 && (
+              <Badge
+                variant="outline"
+                className="ml-1 h-5 border-amber-500/30 bg-amber-500/10 px-1.5 text-xs text-amber-700 dark:text-amber-300"
+              >
+                {pendingRevenueCount}
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
 
@@ -477,6 +547,62 @@ export default async function ClientDetailPage({
             </CardHeader>
             <CardContent>
               <AccessForm clientId={client.id} access={decryptedAccess} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="revenue" className="space-y-4">
+          {hasPub && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Déclarations de chiffre d&apos;affaires
+                </CardTitle>
+                <CardDescription>
+                  Le client déclare son CA mensuel généré grâce à la pub. Tu valides
+                  le montant pour qu&apos;il devienne facturable (20 %).
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <RevenuePanel
+                  declarations={revenueDeclarations.map((r) => ({
+                    id: r.id,
+                    periodMonth: r.periodMonth,
+                    declaredRevenueCents: r.declaredRevenueCents,
+                    declaredAt: r.declaredAt,
+                    validatedRevenueCents: r.validatedRevenueCents,
+                    validatedAt: r.validatedAt,
+                    notes: r.notes,
+                    status: r.status,
+                  }))}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Factures émises</CardTitle>
+              <CardDescription>
+                Toutes les factures Stripe émises pour ce client. Le PDF, le
+                numéro légal et le lien de paiement sont gérés par Stripe.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <InvoicesList
+                invoices={clientInvoices.map((i) => ({
+                  id: i.id,
+                  serviceType: i.serviceType,
+                  periodMonth: i.periodMonth,
+                  amountCents: i.amountCents,
+                  status: i.status,
+                  stripeInvoiceNumber: i.stripeInvoiceNumber,
+                  stripeHostedInvoiceUrl: i.stripeHostedInvoiceUrl,
+                  stripeInvoicePdfUrl: i.stripeInvoicePdfUrl,
+                  issuedAt: i.issuedAt,
+                  paidAt: i.paidAt,
+                }))}
+              />
             </CardContent>
           </Card>
         </TabsContent>

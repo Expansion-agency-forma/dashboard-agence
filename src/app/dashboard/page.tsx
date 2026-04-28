@@ -9,6 +9,8 @@ import {
   clientFormationIntake,
   clientIntake,
   clients,
+  invoices,
+  monthlyPubRevenue,
   onboardingSteps,
   type Client,
   type OnboardingStep,
@@ -16,6 +18,8 @@ import {
   type ClientAccess,
   type ClientIntake,
   type ClientFormationIntake,
+  type Invoice,
+  type MonthlyPubRevenue,
 } from "@/db/schema"
 import { asc, desc, eq, ne } from "drizzle-orm"
 import {
@@ -36,6 +40,7 @@ import {
   CheckSquare,
   Circle,
   CreditCard,
+  Euro,
   FileText,
   FileUp,
   UserPlus,
@@ -57,6 +62,8 @@ import { decrypt } from "@/lib/crypto"
 import { getRecentNotifications, formatRelativeTime } from "@/lib/notifications"
 import { TaskQuickToggle } from "@/app/admin/tasks/task-quick-toggle"
 import { StepQuickToggle } from "./step-quick-toggle"
+import { RevenueDeclareCard } from "./revenue-declare-card"
+import { InvoicesList } from "@/components/invoices-list"
 
 export const dynamic = "force-dynamic"
 
@@ -396,6 +403,8 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
   let access: ClientAccess | null = null
   let intake: ClientIntake | null = null
   let formationIntake: ClientFormationIntake | null = null
+  let revenueDeclarations: MonthlyPubRevenue[] = []
+  let clientInvoices: Invoice[] = []
 
   if (email) {
     const [row] = await db
@@ -459,6 +468,20 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
         .from(clientFormationIntake)
         .where(eq(clientFormationIntake.clientId, clientRow.id))
       formationIntake = formationIntakeRow ?? null
+
+      if (clientRow.services.includes("pub")) {
+        revenueDeclarations = await db
+          .select()
+          .from(monthlyPubRevenue)
+          .where(eq(monthlyPubRevenue.clientId, clientRow.id))
+          .orderBy(desc(monthlyPubRevenue.periodMonth))
+      }
+
+      clientInvoices = await db
+        .select()
+        .from(invoices)
+        .where(eq(invoices.clientId, clientRow.id))
+        .orderBy(desc(invoices.issuedAt))
     }
   }
 
@@ -486,8 +509,17 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
         Boolean(access?.instagramPasswordEnc))
     )
   const needsLivret = hasFormation && !formationIntake?.completedAt
+  const needsBilling =
+    Boolean(clientRow) &&
+    !(
+      clientRow?.billingName &&
+      clientRow?.billingAddressLine1 &&
+      clientRow?.billingPostalCode &&
+      clientRow?.billingCity &&
+      clientRow?.siret
+    )
   const shouldShowIntake =
-    clientRow && (needsBrief || needsAdAccountChoice || needsLivret)
+    clientRow && (needsBrief || needsAdAccountChoice || needsLivret || needsBilling)
   // Card-add modal: admin has confirmed ad account creation + client hasn't added their card yet.
   // Only after the intake has been taken care of, to avoid stacking blocking modals.
   const shouldShowCardModal =
@@ -517,6 +549,7 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
           needsFormation={needsLivret}
           needsBrief={needsBrief}
           needsAdAccountChoice={needsAdAccountChoice}
+          needsBilling={needsBilling}
           initialPreference={
             (clientRow.adAccountPreference as "invite" | "create" | null) ?? null
           }
@@ -531,6 +564,15 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
             brandStory: intake?.brandStory ?? null,
             bestResults: intake?.bestResults ?? null,
             currentOffer: intake?.currentOffer ?? null,
+          }}
+          initialBilling={{
+            billingName: clientRow.billingName ?? clientRow.company ?? null,
+            billingAddressLine1: clientRow.billingAddressLine1,
+            billingAddressLine2: clientRow.billingAddressLine2,
+            billingPostalCode: clientRow.billingPostalCode,
+            billingCity: clientRow.billingCity,
+            billingCountry: clientRow.billingCountry,
+            siret: clientRow.siret,
           }}
           existingLivret={
             formationIntake?.livretUrl && formationIntake.livretName
@@ -616,6 +658,10 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
               <TabsTrigger value="access">
                 <KeyRound size={14} />
                 Mes accès
+              </TabsTrigger>
+              <TabsTrigger value="billing">
+                <Euro size={14} />
+                Facturation
               </TabsTrigger>
             </TabsList>
 
@@ -711,6 +757,47 @@ async function ClientDashboard({ firstName, email, userId, user }: ClientDashboa
                 </CardHeader>
                 <CardContent>
                   <AccessForm clientId={clientRow.id} access={decryptedAccess} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="billing" className="space-y-4">
+              {hasPub && (
+                <RevenueDeclareCard
+                  clientId={clientRow.id}
+                  declarations={revenueDeclarations.map((r) => ({
+                    id: r.id,
+                    periodMonth: r.periodMonth,
+                    declaredRevenueCents: r.declaredRevenueCents,
+                    validatedRevenueCents: r.validatedRevenueCents,
+                    status: r.status,
+                  }))}
+                />
+              )}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Mes factures</CardTitle>
+                  <CardDescription>
+                    Téléchargez vos factures et payez en ligne. Toutes les factures
+                    sont émises par Expansion via Stripe.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <InvoicesList
+                    showPayCta
+                    invoices={clientInvoices.map((i) => ({
+                      id: i.id,
+                      serviceType: i.serviceType,
+                      periodMonth: i.periodMonth,
+                      amountCents: i.amountCents,
+                      status: i.status,
+                      stripeInvoiceNumber: i.stripeInvoiceNumber,
+                      stripeHostedInvoiceUrl: i.stripeHostedInvoiceUrl,
+                      stripeInvoicePdfUrl: i.stripeInvoicePdfUrl,
+                      issuedAt: i.issuedAt,
+                      paidAt: i.paidAt,
+                    }))}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
