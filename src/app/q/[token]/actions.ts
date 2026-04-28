@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm"
 import { seedDefaultSteps } from "@/lib/onboarding"
 import { stripe } from "@/lib/stripe"
 import { computeQuoteDepositCents, formatEuros } from "@/lib/pricing"
+import { issueDepositInvoice } from "@/lib/invoices"
 import { getClientIp, getUserAgent } from "@/lib/request-meta"
 
 const tokenSchema = z.string().min(20).max(64)
@@ -179,10 +180,38 @@ export async function completeQuoteAcceptance(
     })
     .where(eq(quotes.id, quote.id))
 
+  // If a deposit was paid, generate a Stripe invoice marked as paid out-of-band
+  // so the client gets a proper receipt + PDF in their dashboard.
+  if (quote.depositPaidAt && quote.depositAmountCents && quote.depositAmountCents > 0) {
+    try {
+      const [client] = await db
+        .select()
+        .from(clients)
+        .where(eq(clients.id, clientId))
+      if (client) {
+        await issueDepositInvoice({
+          client,
+          amountCents: quote.depositAmountCents,
+          description: `Acompte 10 % — Formation${
+            client.company ? ` (${client.company})` : ""
+          }`,
+          metadata: {
+            quoteId: quote.id,
+            depositSessionId: quote.depositStripeSessionId ?? "",
+          },
+        })
+      }
+    } catch (err) {
+      console.error("[completeQuoteAcceptance] deposit invoice failed:", err)
+      // Non-blocking — admin can re-run from the Stripe dashboard if needed.
+    }
+  }
+
   revalidatePath(`/q/${quote.publicToken}`)
   revalidatePath(`/admin/quotes/${quote.id}`)
   revalidatePath("/admin/quotes")
   revalidatePath("/admin/clients")
+  revalidatePath("/dashboard")
 
   return { ok: true, clientCreated }
 }

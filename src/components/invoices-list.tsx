@@ -45,6 +45,9 @@ function describe(invoice: InvoiceListItem): string {
   if (invoice.serviceType === "formation") {
     return "Formation en ligne"
   }
+  if (invoice.serviceType === "deposit") {
+    return "Acompte — Formation"
+  }
   return invoice.serviceType
 }
 

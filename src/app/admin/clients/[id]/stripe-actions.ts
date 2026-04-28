@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { auth } from "@clerk/nextjs/server"
 import { db } from "@/db/client"
-import { clients, monthlyPubRevenue } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { clients, invoices, monthlyPubRevenue } from "@/db/schema"
+import { and, eq } from "drizzle-orm"
 import { getRole } from "@/lib/auth"
 import { ensureStripeCustomer } from "@/lib/stripe-customer"
 import { issueInvoice } from "@/lib/invoices"
@@ -129,6 +129,29 @@ export async function issueFormationInvoiceAction(
     lines.push({
       amountCents: client.formationTravelCents,
       description: "Frais de déplacement",
+    })
+  }
+
+  // Deduct any paid deposit so the formation invoice represents the
+  // remaining balance owed.
+  const paidDeposits = await db
+    .select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.clientId, client.id),
+        eq(invoices.serviceType, "deposit"),
+        eq(invoices.status, "paid"),
+      ),
+    )
+  const totalDepositCents = paidDeposits.reduce(
+    (acc, d) => acc + d.amountCents,
+    0,
+  )
+  if (totalDepositCents > 0) {
+    lines.push({
+      amountCents: -totalDepositCents,
+      description: "Acompte déjà versé (déduit)",
     })
   }
 

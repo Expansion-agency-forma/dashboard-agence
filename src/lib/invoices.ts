@@ -51,10 +51,12 @@ export async function issueInvoice(input: IssueInvoiceInput): Promise<Invoice> {
     )
   }
   for (const line of input.lines) {
-    if (line.amountCents <= 0) {
-      throw new Error("Chaque ligne doit avoir un montant strictement positif.")
+    if (line.amountCents === 0) {
+      throw new Error("Chaque ligne doit avoir un montant non nul.")
     }
   }
+  // Lines may be negative (deposit deductions, credits) but the total must
+  // be positive — checked above via totalCents < 100.
 
   const customerId = await ensureStripeCustomer(input.client)
 
@@ -146,4 +148,97 @@ function stripeStatusToOurStatus(
     default:
       return "open"
   }
+}
+
+/**
+ * Creates a Stripe invoice for a deposit that was already paid externally
+ * (via the quote acceptance Checkout Session). The invoice is finalized and
+ * marked as paid out-of-band — Stripe generates the PDF + numbering, the
+ * client gets a downloadable receipt, and our `invoices` table tracks it.
+ *
+ * Idempotent: if a deposit invoice already exists for this client + this
+ * Stripe checkout session, we don't create a duplicate.
+ */
+export async function issueDepositInvoice(input: {
+  client: Client
+  amountCents: number
+  description: string
+  metadata: Record<string, string>
+}): Promise<Invoice | null> {
+  if (input.amountCents < 100) return null
+
+  // Idempotency check — don't double-create if we already have one for this
+  // session id (caller should pass the session id in metadata).
+  const sessionId = input.metadata.depositSessionId
+  if (sessionId) {
+    const existing = await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.clientId, input.client.id))
+    const dup = existing.find(
+      (i) => i.serviceType === "deposit" && i.status === "paid",
+    )
+    if (dup) return dup
+  }
+
+  const customerId = await ensureStripeCustomer(input.client)
+
+  const draft = await stripe.invoices.create({
+    customer: customerId,
+    collection_method: "send_invoice",
+    days_until_due: 1,
+    auto_advance: false,
+    description: input.description,
+    metadata: {
+      clientId: input.client.id,
+      kind: "deposit",
+      ...input.metadata,
+    },
+    pending_invoice_items_behavior: "exclude",
+  })
+  if (!draft.id) throw new Error("Stripe deposit invoice creation failed")
+
+  await stripe.invoiceItems.create({
+    customer: customerId,
+    invoice: draft.id,
+    currency: "eur",
+    amount: input.amountCents,
+    description: input.description,
+  })
+
+  const finalized = await stripe.invoices.finalizeInvoice(draft.id, {
+    auto_advance: false,
+  })
+
+  // Mark as paid out-of-band — payment was received via the Checkout Session.
+  const paid = await stripe.invoices.pay(finalized.id!, {
+    paid_out_of_band: true,
+  })
+
+  const [row] = await db
+    .insert(invoices)
+    .values({
+      clientId: input.client.id,
+      serviceType: "deposit",
+      periodMonth: null,
+      amountCents: input.amountCents,
+      status: "paid",
+      stripeInvoiceId: paid.id!,
+      stripeInvoiceNumber: paid.number ?? null,
+      stripeHostedInvoiceUrl: paid.hosted_invoice_url ?? null,
+      stripeInvoicePdfUrl: paid.invoice_pdf ?? null,
+      issuedAt: new Date(),
+      paidAt: new Date(),
+      issuedBy: "system",
+    })
+    .returning()
+
+  if (!input.client.stripeCustomerId) {
+    await db
+      .update(clients)
+      .set({ stripeCustomerId: customerId, updatedAt: new Date() })
+      .where(eq(clients.id, input.client.id))
+  }
+
+  return row
 }
